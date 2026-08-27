@@ -1,0 +1,9 @@
+[versions]
+fakelib = "1.0"
+acmeAudit = "1.4"
+junit = "4.13.2"
+
+[libraries]
+fakelib = { module = "com.example.fakelib:fakelib", version.ref = "fakelib" }
+acme-audit = { module = "com.example.acme:acme-audit", version.ref = "acmeAudit" }
+junit = { module = "junit:junit", version.ref = "junit" }

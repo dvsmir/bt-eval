@@ -1,0 +1,5 @@
+[versions]
+acme-json = "2.3.1"
+
+[libraries]
+acme-json = { module = "com.acme.internal:acme-json", version.ref = "acme-json" }
