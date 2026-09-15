@@ -107,3 +107,24 @@ ol_find_grep_i() {
   local dir="$1" glob="$2" re="$3"
   find "$dir" -name "$glob" -type f -not -path '*/build/*' -not -path '*/.gradle/*'     -exec grep -liE "$re" {} + 2>/dev/null | head -1 | grep -q .
 }
+
+# ---------------------------------------------------------------------- Maven
+# Runs the Maven wrapper with the pinned JDK. Output goes to $OL_MVN_OUT.
+# Returns the exit code of Maven.
+#
+# The wrapper is the script-only distribution. It finds an already extracted
+# Maven under ~/.m2/wrapper/dists, so the call needs no network. It still needs
+# the plugins in ~/.m2/repository, which is the same portability limit the
+# Gradle traps have with ~/.gradle. README section 7 records it.
+ol_mvn() {
+  local dir="$1"; shift
+  OL_MVN_OUT="$(mktemp)"
+  ( cd "$dir" && JAVA_HOME="$BT_JAVA_HOME" bash ./mvnw -B --no-transfer-progress "$@" ) \
+    >"$OL_MVN_OUT" 2>&1
+  return $?
+}
+
+# ol_mvn_out — the captured output of the last ol_mvn call.
+ol_mvn_out() {
+  cat "${OL_MVN_OUT:-/dev/null}"
+}

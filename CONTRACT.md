@@ -5,9 +5,10 @@ Read this file completely before you create a trap.
 
 ## 1. What a trap is
 
-A trap is one complete Gradle project. It contains exactly one piece of hidden
-information. An agent that works only through the shell and through file reads must
-have difficulty with that information. An agent that can ask a synced IDE must not.
+A trap is one complete build-tool project, Gradle or Maven. It contains exactly one
+piece of hidden information. An agent that works only through the shell and through
+file reads must have difficulty with that information. An agent that can ask a synced
+IDE must not.
 
 One trap tests one cause. Do not combine two causes in one trap. If the result is a
 failure, the reader must know which cause produced it.
@@ -21,7 +22,8 @@ traps/NN-slug/
   EXPECTED.md    The correct result, and the wrong result.
   oracle.sh      The script that decides PASS or FAIL.
   env.sh         Optional. The runner sources it to set JAVA_HOME or other variables.
-  project/       The complete Gradle project. The agent gets a copy of this directory.
+  agent-args.txt Optional. Extra command line arguments for the agent. See section 10.
+  project/       The complete build project. The agent gets a copy of this directory.
 ```
 
 ## 3. The isolation rule
@@ -94,10 +96,28 @@ Rules:
 
 ## 7. project/
 
+Pick the build tool that the trap is about. Do not use both in one trap.
+
+**Gradle**
+
 - Copy `template/gradlew`, `template/gradlew.bat`, and `template/gradle/wrapper/` into
   `project/`. The wrapper is verified and it uses Gradle 8.14, which is already in the
   local cache.
 - Use the Kotlin DSL, `build.gradle.kts` and `settings.gradle.kts`.
+
+**Maven**
+
+- Copy `template/mvnw`, `template/mvnw.cmd`, and `template/.mvn/wrapper/` into `project/`.
+  The wrapper is the **script only** distribution, `distributionType=only-script`, and it
+  points at Maven 3.9.11. There is no wrapper jar to download.
+- Every plugin the build runs must be pinned in `pluginManagement`, and it must already be
+  in the local repository, because the oracle builds with `-o`. Run the build once and
+  check. `maven-help-plugin` is **not** in the cache, so `help:active-profiles` and
+  `help:effective-pom` are closed to an offline agent. Do not add it.
+- Use `ol_mvn` from `lib/oracle-lib.sh` in the oracle, not a bare `mvn`.
+
+**Both**
+
 - Make the project realistic. Use more than one module. Use a version catalog or a
   convention plugin in `buildSrc` when the trap needs one.
 - Keep the project small. The agent must be able to read it. The cost of the trap is the
@@ -134,3 +154,21 @@ These JDKs exist on this machine:
 `corretto-1.8.0_482`, `corretto-11.0.27`, `corretto-21.0.6`, `corretto-22.0.1`,
 `jbr-17.0.9`, `jbr-21.0.8`, `jbr-25.0.2`, `openjdk-24.0.1`, `openjdk-25.0.1`,
 `openjdk-25.0.2`.
+
+## 10. agent-args.txt
+
+Optional. One command line argument per line. Blank lines and lines that start with `#`
+are ignored. Both runners append the lines to the `claude` invocation, after
+`--permission-mode bypassPermissions`.
+
+An argument and its value go on **separate lines**, because the file is read line by line:
+
+```
+# Deny the web tools. This trap asks a question the agent must not look up.
+--disallowedTools
+WebSearch,WebFetch
+```
+
+Use it only when the trap needs it, and write the reason in the file as a comment. An
+argument that changes what the agent can do also changes what the number means, so the
+reason must be readable next to the trap.

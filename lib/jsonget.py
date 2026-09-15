@@ -33,6 +33,15 @@ def main() -> int:
     for part in dotted.split("."):
         if isinstance(node, dict) and part in node:
             node = node[part]
+        elif isinstance(node, list) and part.lstrip("-").isdigit():
+            # A path segment that is a number indexes a list, so a feed such as
+            # advisories.0.id can be read without a second script.
+            index = int(part)
+            if -len(node) <= index < len(node):
+                node = node[index]
+            else:
+                print(default)
+                return 0
         else:
             print(default)
             return 0

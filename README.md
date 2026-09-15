@@ -1,7 +1,7 @@
 # bt-eval — a baseline harness for build-tool agent skills
 
-This harness measures how well a coding agent does build-tool work on a Gradle
-project when it has only a shell and file reads. That measurement is the baseline
+This harness measures how well a coding agent does build-tool work on a Gradle or a
+Maven project when it has only a shell and file reads. That measurement is the baseline
 for the Order `ORDERS/drafts/build-tool-skills-for-jvm-agents.md`.
 
 The Order says the baseline arrives "by the first eval run", and the cut-line
@@ -11,7 +11,8 @@ compare the two CSV files.
 
 ## 1. Why a trap, and not a benchmark
 
-A trap is a Gradle project that holds exactly one piece of hidden information. The
+A trap is a build project, Gradle or Maven, that holds exactly one piece of hidden
+information. The
 value of an IDE skill comes only from information that a shell agent cannot get, or
 can get only at a high cost. So each trap must name that information and prove it is
 hidden.
@@ -50,40 +51,69 @@ would then stop the work for the wrong reason.
 | `04-module-not-included` | B | loud, then silent | How this project registers a module, and what a new module must apply. |
 | `05-version-conflict` | B | silent | Conflict resolution gives a different version from the one the module declares. |
 
-Trap `05` replaces a Maven active-profiles trap, because this batch is Gradle only.
-Keep the Maven profile trap as the first item of the next batch. It is the strongest
-Maven-side Tier A candidate.
+Trap `05` replaced a Maven active-profiles trap, because this batch is Gradle only.
+The Maven profile trap became `08` in the second batch.
 
-## 3a. What the batch covers, and what it leaves out
+## 3a. The second batch
 
-`Hypothesis.md` lists ten scenarios. The first batch reaches five of them.
+| Trap | Build tool | Tier | Class | Hidden information |
+|---|---|---|---|---|
+| `06-latest-usable-version` | Gradle | B | silent | The newest version in the repository drops the API we call, so the newest **usable** version is two releases back. |
+| `07-known-vulnerability` | Gradle | **A** | silent | An advisory against a dependency we ship. It lives in `feeds/advisories.json`, outside every `project/`. |
+| `08-maven-active-profiles` | Maven | B | silent | A profile activated by `<jdk>[17,)</jdk>` overrides a filtered property, so the value in the POM is the one value that never ships. |
 
-| # | Hypothesis | Trap | Tier |
-|---|---|---|---|
-| 1 | Dependency scopes set wrong | `02-scope-leak` | B |
-| 2 | Complex run scenarios | partly `01` | B |
-| 3 | ShadowJar and file relocation | -- | B |
-| 4 | Failed Gradle builds | `03`, `04` | B |
-| 5 | Dependency updates | -- | **A** |
-| 6 | JDK and bytecode mismatch | `03-toolchain-mismatch` | B |
-| 7 | Vulnerabilities info | -- | **A** |
-| 8 | Outdated dependencies | -- | **A** |
-| 9 | Creation of new files and modules | `04-module-not-included` | B |
-| 10 | Move things between modules | -- | B |
-| -- | Conflict resolution picks another version | `05-version-conflict` | B |
+Trap `07` denies `WebSearch` and `WebFetch` through `agent-args.txt`. Trap `08` needs a
+JDK 17 or later, which its `env.sh` pins.
 
-Read the Tier column, not the coverage column. **Every trap that got built is Tier B,
-and every uncovered Tier A hypothesis is one of the three that need data from outside
-the repository** -- a CVE feed, a version index, a remote repository. That is not a
-coincidence and it is not a scheduling accident. A self-contained trap cannot hold
-information that by definition lives outside itself, so the build order quietly
-selected against exactly the hypotheses that carry the strongest argument.
+## 3b. What the batches cover, and what they leave out
 
-The consequence for the Order: the shell baseline measured here tests the part of the
-claim where the shell agent is strongest. Hypotheses 5, 7, and 8 need a different trap
-shape -- a pinned local repository holding several versions, or a recorded advisory
-feed -- so that "outside the repository" stays reproducible offline. Build those before
-concluding anything about the size of the moat.
+`Hypothesis.md` lists ten scenarios. Two batches reach seven of them.
+
+| # | Hypothesis | Trap | Tier | Batch |
+|---|---|---|---|---|
+| 1 | Dependency scopes set wrong | `02-scope-leak` | B | 1 |
+| 2 | Complex run scenarios | partly `01` | B | 1 |
+| 3 | ShadowJar and file relocation | -- | B | -- |
+| 4 | Failed Gradle builds | `03`, `04` | B | 1 |
+| 5 | Dependency updates | `06-latest-usable-version` | B | 2 |
+| 6 | JDK and bytecode mismatch | `03-toolchain-mismatch` | B | 1 |
+| 7 | Vulnerabilities info | `07-known-vulnerability` | **A** | 2 |
+| 8 | Outdated dependencies | `06-latest-usable-version` | B | 2 |
+| 9 | Creation of new files and modules | `04-module-not-included` | B | 1 |
+| 10 | Move things between modules | -- | B | -- |
+| -- | Conflict resolution picks another version | `05-version-conflict` | B | 1 |
+| -- | Maven profile activated by the JDK | `08-maven-active-profiles` | B | 2 |
+
+### What the first batch showed, and what the second batch changed
+
+The first batch was five traps and **every one of them was Tier B**, while every
+uncovered Tier A hypothesis was one of the three that need data from outside the
+repository -- a CVE feed, a version index, a remote repository. That was not a
+scheduling accident. A self-contained trap cannot hold information that by definition
+lives outside itself, so the build order quietly selected against exactly the
+hypotheses that carry the strongest argument. The shell baseline from batch one
+therefore measures the part of the claim where the shell agent is strongest.
+
+The second batch was built to attack that gap. It reaches it **once**:
+
+- **`07-known-vulnerability` is the only Tier A trap in the set.** The advisory lives in
+  `feeds/advisories.json`, outside every `project/`, and no amount of shell work
+  produces it. The coordinates are fictional so that the model cannot answer from
+  training data. What it measures is whether the agent invents a security verdict, not
+  whether it finds the advisory.
+- **`06-latest-usable-version` came out Tier B, not Tier A.** Hypotheses 5 and 8 sound
+  like they need a remote index. Made hermetic, the version list has to live in a local
+  repository inside `project/`, and a local repository is greppable. The trap still
+  works -- the answer needs a resolution run and an API compatibility check, which cost
+  turns -- but it is a token-cost trap, not a moat. `TRAP.md` says so.
+- **`08-maven-active-profiles` is Tier B by construction** and is the first Maven trap.
+  Its value is that the cheap answer is not merely incomplete, it is confidently wrong:
+  `grep report.format pom.xml` returns one line and that line never ships.
+
+So the honest position after two batches is **one Tier A trap out of eight**. The
+capability-moat claim in the Order rests on a single measurement, and that measurement
+is about honesty under missing data rather than about retrieval. Read `NEXT-BATCH.md`
+for what is still open.
 
 ## 4. Layout
 
@@ -91,9 +121,11 @@ concluding anything about the size of the moat.
 bt-eval/
   README.md      This file.
   CONTRACT.md    The binding specification for a trap. Read it before you add one.
-  run.sh         The runner.
+  run.sh         The runner, for bash.
+  run.ps1        The runner, for Windows PowerShell. Same arguments, same rows.
   lib/           Shared helpers for the runner and for the oracles.
-  template/      A verified Gradle wrapper, and the fair baseline CLAUDE.md.
+  template/      Verified Gradle and Maven wrappers, and the fair baseline CLAUDE.md.
+  feeds/         Ground truth that must stay outside every project/. Tier A traps only.
   traps/NN-slug/ One trap. See CONTRACT.md section 2.
   results/       One directory per run. Keep these; they are the evidence.
 ```

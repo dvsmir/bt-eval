@@ -1,0 +1,7 @@
+[versions]
+widgets = "1.0.0"
+junit = "4.13.2"
+
+[libraries]
+widgets = { module = "com.acme:widgets", version.ref = "widgets" }
+junit = { module = "junit:junit", version.ref = "junit" }

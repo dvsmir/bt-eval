@@ -320,6 +320,17 @@ foreach ($slug in $trapList) {
       Copy-Item -LiteralPath $baseline -Destination (Join-Path $work 'CLAUDE.md') -Force
     }
 
+    # A trap may need extra flags on the claude command. Trap 07 denies the web
+    # tools, because a question it asks is only meaningful when the agent cannot
+    # look the answer up. One argument per line, blank lines and # comments ignored.
+    $trapArgs = @()
+    $argsFile = Join-Path $trapDir 'agent-args.txt'
+    if (Test-Path -LiteralPath $argsFile) {
+      $trapArgs = @(Get-Content -LiteralPath $argsFile |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_ -and -not $_.StartsWith('#') })
+    }
+
     Write-Host ('{0,-28} run {1}/{2} ... ' -f $slug, $i, $Repeats) -NoNewline
 
     $resultJson = Join-Path $workRoot 'result.json'
@@ -329,7 +340,7 @@ foreach ($slug in $trapList) {
     $sw = [Diagnostics.Stopwatch]::StartNew()
     $finished = Invoke-Claude -WorkDir $work -PromptFile (Join-Path $trapDir 'TASK.md') `
       -StdoutFile $resultJson -StderrFile $stderrLog `
-      -ExtraArgs @('--permission-mode', 'bypassPermissions') `
+      -ExtraArgs (@('--permission-mode', 'bypassPermissions') + $trapArgs) `
       -TimeoutSeconds $TimeoutSec -JavaHomeForRun $trapJavaWin
     $sw.Stop()
     $wall = [int]$sw.Elapsed.TotalSeconds
@@ -365,10 +376,11 @@ foreach ($slug in $trapList) {
 
     Write-Host ('{0,-12} {1} ({2}s)' -f $verdict, $detail, $wall)
 
-    # The Gradle build output is large and it is not evidence. Drop it, then keep
+    # The build output is large and it is not evidence. Drop it, then keep
     # the source tree the agent left behind, so a verdict can be checked by hand.
+    # Maven writes target/, Gradle writes build/ and .gradle/.
     $junk = @(Get-ChildItem -LiteralPath $work -Directory -Recurse -Force -ErrorAction SilentlyContinue |
-      Where-Object { $_.Name -in @('build', '.gradle') })
+      Where-Object { $_.Name -in @('build', '.gradle', 'target') })
     foreach ($d in $junk) { Clear-Scratch $d.FullName }
     Copy-Item -LiteralPath $work -Destination (Join-Path $workRoot 'work-final') -Recurse -ErrorAction SilentlyContinue
     Clear-Scratch $work

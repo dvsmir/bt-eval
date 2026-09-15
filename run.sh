@@ -161,19 +161,32 @@ for slug in $TRAP_LIST; do
       cp "$HERE/template/BASELINE_CLAUDE.md" "$WORK/CLAUDE.md"
     fi
 
+    # A trap may need extra flags on the claude command. Trap 07 denies the web
+    # tools, because a question it asks is only meaningful when the agent cannot
+    # look the answer up. One argument per line, blank lines and # comments ignored.
+    TRAP_ARGS=()
+    if [ -f "$TRAP_DIR/agent-args.txt" ]; then
+      while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in ''|'#'*) continue ;; esac
+        TRAP_ARGS+=("$line")
+      done < "$TRAP_DIR/agent-args.txt"
+    fi
+
     printf '%-28s run %s/%s ... ' "$slug" "$i" "$REPEATS"
     START="$(date +%s)"
     if [ "$HAVE_TIMEOUT" = "1" ]; then
       ( cd "$WORK" && JAVA_HOME="$BT_JAVA_HOME" timeout "${TIMEOUT_S}s" \
           claude -p "$(cat "$TRAP_DIR/TASK.md")" \
             --output-format json --model "$MODEL" \
-            --permission-mode bypassPermissions ) \
+            --permission-mode bypassPermissions \
+            ${TRAP_ARGS[@]+"${TRAP_ARGS[@]}"} ) \
         >"$WORKROOT/result.json" 2>"$WORKROOT/stderr.log"
     else
       ( cd "$WORK" && JAVA_HOME="$BT_JAVA_HOME" \
           claude -p "$(cat "$TRAP_DIR/TASK.md")" \
             --output-format json --model "$MODEL" \
-            --permission-mode bypassPermissions ) \
+            --permission-mode bypassPermissions \
+            ${TRAP_ARGS[@]+"${TRAP_ARGS[@]}"} ) \
         >"$WORKROOT/result.json" 2>"$WORKROOT/stderr.log"
     fi
     END="$(date +%s)"
@@ -197,9 +210,11 @@ for slug in $TRAP_LIST; do
 
     printf '%-12s %s (%ss)\n' "$VERDICT" "$DETAIL" "$WALL"
 
-    # The Gradle build output is large and it is not evidence. Drop it, then keep
+    # The build output is large and it is not evidence. Drop it, then keep
     # the source tree the agent left behind, so a verdict can be checked by hand.
+    # Maven writes target/, Gradle writes build/ and .gradle/.
     rm -rf "$WORK"/*/build "$WORK/build" "$WORK/.gradle"            "$WORK/buildSrc/build" "$WORK/buildSrc/.gradle" 2>/dev/null
+    find "$WORK" -type d -name target -prune -exec rm -rf {} + 2>/dev/null
     cp -r "$WORK" "$WORKROOT/work-final" 2>/dev/null
     rm -rf "$WORK"
 
