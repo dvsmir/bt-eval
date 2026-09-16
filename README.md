@@ -1,21 +1,13 @@
 # bt-eval — a baseline harness for build-tool agent skills
 
 This harness measures how well a coding agent does build-tool work on a Gradle or a
-Maven project when it has only a shell and file reads. That measurement is the baseline
-for the Order `ORDERS/drafts/build-tool-skills-for-jvm-agents.md`.
-
-The Order says the baseline arrives "by the first eval run", and the cut-line
-decision waits for it. **You can produce this baseline today. It needs no IDE work
-and no skill implementation.** When the skills exist, run the same traps again and
-compare the two CSV files.
+Maven project when it has only a shell and file reads. 
 
 ## 1. Why a trap, and not a benchmark
 
 A trap is a build project, Gradle or Maven, that holds exactly one piece of hidden
-information. The
-value of an IDE skill comes only from information that a shell agent cannot get, or
-can get only at a high cost. So each trap must name that information and prove it is
-hidden.
+information. The value of an IDE skill comes only from information that a shell agent cannot get, or
+can get only at a high cost. So each trap must name that information and prove it is hidden.
 
 Sort every candidate into one of three tiers:
 
@@ -41,34 +33,18 @@ Choose traps from both classes, on purpose. A set of only loud traps gives a goo
 token number and a flat success-rate number. The failure criterion of the Order
 would then stop the work for the wrong reason.
 
-## 3. The first batch
-
-| Trap | Tier | Class | Hidden information |
-|---|---|---|---|
-| `01-test-task-mapping` | B | silent | Integration tests live in their own source set with their own task, and `build` does not run it. |
-| `02-scope-leak` | B | silent | A `buildSrc` convention plugin uses `compileOnly`, so the compile classpath and the runtime classpath differ. |
-| `03-toolchain-mismatch` | B | loud | The effective bytecode target comes from a convention plugin, and `--release` silently overrides the toolchain the module declares. |
-| `04-module-not-included` | B | loud, then silent | How this project registers a module, and what a new module must apply. |
-| `05-version-conflict` | B | silent | Conflict resolution gives a different version from the one the module declares. |
-
-Trap `05` replaced a Maven active-profiles trap, because this batch is Gradle only.
-The Maven profile trap became `08` in the second batch.
-
-## 3a. The second batch
+## 3. The traps
 
 | Trap | Build tool | Tier | Class | Hidden information |
 |---|---|---|---|---|
+| `01-test-task-mapping` | Gradle | B | silent | Integration tests live in their own source set with their own task, and `build` does not run it. |
+| `02-scope-leak` | Gradle | B | silent | A `buildSrc` convention plugin uses `compileOnly`, so the compile classpath and the runtime classpath differ. |
+| `03-toolchain-mismatch` | Gradle | B | loud | The effective bytecode target comes from a convention plugin, and `--release` silently overrides the toolchain the module declares. |
+| `04-module-not-included` | Gradle | B | loud, then silent | How this project registers a module, and what a new module must apply. |
+| `05-version-conflict` | Gradle | B | silent | Conflict resolution gives a different version from the one the module declares. |
 | `06-latest-usable-version` | Gradle | B | silent | The newest version in the repository drops the API we call, so the newest **usable** version is two releases back. |
 | `07-known-vulnerability` | Gradle | **A** | silent | An advisory against a dependency we ship. It lives in `feeds/advisories.json`, outside every `project/`. |
 | `08-maven-active-profiles` | Maven | B | silent | A profile activated by `<jdk>[17,)</jdk>` overrides a filtered property, so the value in the POM is the one value that never ships. |
-
-Trap `07` denies `WebSearch` and `WebFetch` through `agent-args.txt`. Trap `08` needs a
-JDK 17 or later, which its `env.sh` pins.
-
-## 3c. The third batch
-
-| Trap | Build tool | Tier | Class | Hidden information |
-|---|---|---|---|---|
 | `09-dependency-substitution` | Gradle | **A** | silent | A global `init.d` script substitutes the version of a dependency, so the version that resolves is not the one any file in `project/` declares. |
 | `10-settings-profile-override` | Maven | **A** | silent | A profile in an injected `settings.xml` overrides a filtered property, so the value in the POM is never the value that ships. |
 | `11-gradle9-deprecations` | Gradle | B | silent | The build calls Gradle API removed in Gradle 9. It runs green today and breaks on upgrade, and only `--warning-mode fail` surfaces it now. |
@@ -76,77 +52,33 @@ JDK 17 or later, which its `env.sh` pins.
 | `15-generated-source-class` | Gradle | B | silent | A class exists only because a build task generates it into `build/`. The file to edit is the generator, not the generated output. |
 | `19-maven-reactor-am` | Maven | B | loud | `mvn -pl service test` fails because the sibling module was never installed. The fix is the `-am` flag, not an edit. |
 
-Traps `09` and `10` inject their hidden state through `env.sh`: a private `GRADLE_USER_HOME`
-with an `init.d` script for `09`, and `MAVEN_ARGS` pointing at a settings file for `10`.
-See CONTRACT.md section 11. Trap `19` needs no file change at all, the recovery is a flag.
+Traps `09` and `10` plant their hidden state through `env.sh`, outside every `project/`:
+a private `GRADLE_USER_HOME` with an `init.d` script for `09`, and `MAVEN_ARGS` pointing
+at a `settings.xml` for `10`. See CONTRACT.md section 11. Trap `07` denies `WebSearch`
+and `WebFetch` through `agent-args.txt`. Traps `08` and `10` pin a JDK in `env.sh`.
 
-## 3b. What the batches cover, and what they leave out
+### Coverage against `Hypothesis.md`
 
-`Hypothesis.md` lists ten scenarios. Three batches reach eight of them.
+Eight of the ten scenarios have a trap. ShadowJar relocation (3) and moving code between
+modules (10) are the two still open. Three traps are Tier A: `07`, `09`, `10`.
 
-| # | Hypothesis | Trap | Tier | Batch |
-|---|---|---|---|---|
-| 1 | Dependency scopes set wrong | `02-scope-leak` | B | 1 |
-| 2 | Complex run scenarios | `01`, `13`, `19` | B | 1, 3 |
-| 3 | ShadowJar and file relocation | -- | B | -- |
-| 4 | Failed Gradle builds | `03`, `04` | B | 1 |
-| 5 | Dependency updates | `06`, `11` | B | 2, 3 |
-| 6 | JDK and bytecode mismatch | `03-toolchain-mismatch` | B | 1 |
-| 7 | Vulnerabilities info | `07-known-vulnerability` | **A** | 2 |
-| 8 | Outdated dependencies | `06-latest-usable-version` | B | 2 |
-| 9 | Creation of new files and modules | `04-module-not-included` | B | 1 |
-| 10 | Move things between modules | -- | B | -- |
-| -- | Conflict resolution picks another version | `05-version-conflict` | B | 1 |
-| -- | Maven profile activated by the JDK | `08-maven-active-profiles` | B | 2 |
-| -- | Dependency substitution by a global init script | `09-dependency-substitution` | **A** | 3 |
-| -- | Maven settings.xml profile override | `10-settings-profile-override` | **A** | 3 |
-| -- | Build-time generated sources | `15-generated-source-class` | B | 3 |
-
-### What the first batch showed, and what the second batch changed
-
-The first batch was five traps and **every one of them was Tier B**, while every
-uncovered Tier A hypothesis was one of the three that need data from outside the
-repository -- a CVE feed, a version index, a remote repository. That was not a
-scheduling accident. A self-contained trap cannot hold information that by definition
-lives outside itself, so the build order quietly selected against exactly the
-hypotheses that carry the strongest argument. The shell baseline from batch one
-therefore measures the part of the claim where the shell agent is strongest.
-
-The second batch was built to attack that gap. It reaches it **once**:
-
-- **`07-known-vulnerability` is the only Tier A trap in the set.** The advisory lives in
-  `feeds/advisories.json`, outside every `project/`, and no amount of shell work
-  produces it. The coordinates are fictional so that the model cannot answer from
-  training data. What it measures is whether the agent invents a security verdict, not
-  whether it finds the advisory.
-- **`06-latest-usable-version` came out Tier B, not Tier A.** Hypotheses 5 and 8 sound
-  like they need a remote index. Made hermetic, the version list has to live in a local
-  repository inside `project/`, and a local repository is greppable. The trap still
-  works -- the answer needs a resolution run and an API compatibility check, which cost
-  turns -- but it is a token-cost trap, not a moat. `TRAP.md` says so.
-- **`08-maven-active-profiles` is Tier B by construction** and is the first Maven trap.
-  Its value is that the cheap answer is not merely incomplete, it is confidently wrong:
-  `grep report.format pom.xml` returns one line and that line never ships.
-
-So the honest position after two batches is **one Tier A trap out of eight**. The
-capability-moat claim in the Order rests on a single measurement, and that measurement
-is about honesty under missing data rather than about retrieval. Read `NEXT-BATCH.md`
-for what is still open.
-
-### What the third batch changed
-
-The third batch adds **two more Tier A traps**, `09` and `10`, so the set now holds
-**three Tier A traps out of fourteen**. Both new ones make their moat without a network.
-The runner injects the deciding state through `env.sh`: a Gradle `init.d` script that
-substitutes a dependency version for `09`, and a Maven `settings.xml` profile reached
-through `MAVEN_ARGS` for `10`. The state sits outside every `project/`, so the agent
-cannot grep for it, and nothing has to be downloaded. This is the same moat shape as
-`07`, built from local files instead of a feed.
-
-The batch also gives capability 2, complex run scenarios, its first direct coverage.
-`13` runs a JUnit 5 suite that the default `test` task skips in silence, and `19` needs a
-reactor flag the default command omits. Eight of the ten hypotheses now have a trap. The
-two that remain, ShadowJar relocation and moving code between modules, are still open.
+| # | Hypothesis | Trap | Tier |
+|---|---|---|---|
+| 1 | Dependency scopes set wrong | `02-scope-leak` | B |
+| 2 | Complex run scenarios | `01`, `13`, `19` | B |
+| 3 | ShadowJar and file relocation | -- | -- |
+| 4 | Failed Gradle builds | `03`, `04` | B |
+| 5 | Dependency updates | `06`, `11` | B |
+| 6 | JDK and bytecode mismatch | `03-toolchain-mismatch` | B |
+| 7 | Vulnerabilities info | `07-known-vulnerability` | **A** |
+| 8 | Outdated dependencies | `06-latest-usable-version` | B |
+| 9 | Creation of new files and modules | `04-module-not-included` | B |
+| 10 | Move things between modules | -- | -- |
+| 11 | Conflict resolution picks another version | `05-version-conflict` | B |
+| 12 | Maven profile activated by the JDK | `08-maven-active-profiles` | B |
+| 13 | Dependency substitution by a global init script | `09-dependency-substitution` | **A** |
+| 14 | Maven settings.xml profile override | `10-settings-profile-override` | **A** |
+| 15 | Build-time generated sources | `15-generated-source-class` | B |
 
 ## 4. Layout
 
@@ -301,7 +233,6 @@ silent trap they point in opposite directions.
 
 ## 7. What this harness does not measure
 
-- It does not measure Maven. This batch is Gradle only.
 - It does not measure real projects. Traps are small and synthetic on purpose, so a
   result points at one cause. A synthetic set alone invites the reply that the traps
   are chosen to win. Phase 1 answers that: two or three real repositories, with tasks
