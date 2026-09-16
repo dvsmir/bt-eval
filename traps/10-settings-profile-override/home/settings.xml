@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+  <profiles>
+    <profile>
+      <id>corp-runtime</id>
+      <activation>
+        <activeByDefault>true</activeByDefault>
+      </activation>
+      <properties>
+        <sink.format>avro</sink.format>
+        <sink.batch.size>100000</sink.batch.size>
+      </properties>
+    </profile>
+  </profiles>
+</settings>

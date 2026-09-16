@@ -287,18 +287,38 @@ foreach ($slug in $trapList) {
   if (-not (Test-Path -LiteralPath (Join-Path $trapDir 'oracle.sh'))) { Write-Host "SKIP ${slug}: no oracle.sh"; continue }
   if (-not (Test-Path -LiteralPath (Join-Path $trapDir 'project'))) { Write-Host "SKIP ${slug}: no project/"; continue }
 
-  # A trap about JDK versions may pin its own JAVA_HOME. Read the value out of the
-  # trap env.sh through bash, rather than parsing it here, so that run.sh and
-  # run.ps1 cannot disagree about what that file means.
+  # A trap about JDK versions may pin its own JAVA_HOME, and a trap about hidden
+  # build state may inject a Gradle home or Maven args. Read the values out of the
+  # trap env.sh through bash, rather than parsing them here, so that run.sh and
+  # run.ps1 cannot disagree about what that file means. Clear the injected pair
+  # first, so one trap's env.sh cannot leak into the next.
+  [Environment]::SetEnvironmentVariable('GRADLE_USER_HOME', $null)
+  [Environment]::SetEnvironmentVariable('MAVEN_ARGS', $null)
   $trapJavaBash = $JavaHomeBash
+  $trapGradleHome = ''
+  $trapMavenArgs = ''
   $envSh = Join-Path $trapDir 'env.sh'
   if (Test-Path -LiteralPath $envSh) {
     $envShBash = ConvertTo-BashPath $envSh
-    $cmd = ". '$envShBash' >/dev/null 2>&1; printf '%s' " + '"$BT_JAVA_HOME"'
-    $fromEnv = & $Bash -c $cmd 2>$null
-    if ($fromEnv) { $trapJavaBash = "$fromEnv".Trim() }
+    # Source env.sh once and read back the variables it may export, separated by a
+    # character that cannot appear in a Windows path. env.sh already puts
+    # GRADLE_USER_HOME and MAVEN_ARGS in Windows form (cygpath -w), so they are
+    # used as-is, not converted.
+    $cmd = ". '$envShBash' >/dev/null 2>&1; " +
+      'printf ''%s|%s|%s'' "$BT_JAVA_HOME" "$GRADLE_USER_HOME" "$MAVEN_ARGS"'
+    $raw = & $Bash -c $cmd 2>$null
+    $parts = "$raw" -split '\|', 3
+    if ($parts.Count -ge 1 -and $parts[0].Trim()) { $trapJavaBash = $parts[0].Trim() }
+    if ($parts.Count -ge 2 -and $parts[1].Trim()) { $trapGradleHome = $parts[1].Trim() }
+    if ($parts.Count -ge 3 -and $parts[2].Trim()) { $trapMavenArgs = $parts[2].Trim() }
   }
   $trapJavaWin = ConvertFrom-BashPath $trapJavaBash
+
+  # Inject the hidden build state for both the agent and the oracle, the way run.sh
+  # does by sourcing env.sh into the shell that launches them. These stay set for
+  # every repeat of this trap and are cleared at the top of the next one.
+  if ($trapGradleHome) { $env:GRADLE_USER_HOME = $trapGradleHome }
+  if ($trapMavenArgs) { $env:MAVEN_ARGS = $trapMavenArgs }
 
   for ($i = 1; $i -le $Repeats; $i++) {
     $workRoot = Join-Path $RunDir "$slug\run$i"

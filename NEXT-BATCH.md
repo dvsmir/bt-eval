@@ -4,6 +4,9 @@
 self-test in `CONTRACT.md` section 8. This file keeps the design reasoning, records where
 the design was wrong, and lists what is still open.
 
+**The third batch is built too.** Traps `09`, `10`, `11`, `13`, `15`, and `19` exist and
+pass the same self-test. Its design note is the section before *Still open*.
+
 Read `README.md` section 3b for the coverage table.
 
 ## Why this batch existed
@@ -81,8 +84,11 @@ A trap built on `~/.m2/settings.xml` would be Tier A and would not be hermetic.
 
 What the built trap does instead is make the **cheap answer confidently wrong**:
 `grep report.format pom.xml` returns exactly one line, `csv`, and `csv` is the one value
-that never ships. Two direct routes are closed because `maven-help-plugin` is not in the
-local repository, so `help:active-profiles` and `help:effective-pom` fail offline.
+that never ships. An earlier draft said the `help:` routes were closed offline. They are
+not: `maven-help-plugin` is in the local repository, so `help:active-profiles` and
+`help:effective-pom` resolve with `-o`, and `help:effective-pom` prints `parquet`
+outright. The signal is that the agent must think to run Maven at all, not that the
+direct route is unavailable.
 
 The oracle also rejects the agent that gets the right string by deleting the profile or
 pinning the property. That was not in the design note and it is the most likely way a
@@ -116,16 +122,56 @@ token one.
 `06` and `08` both passing on the first attempt is worth noting too: a capable agent does
 reach the Tier B answers. Those two traps are there to price the route, not to block it.
 
+## The third batch -- built
+
+**Status: built.** Traps `09`, `10`, `11`, `13`, `15`, and `19` pass the section 8
+self-test. The batch had one job: prove that Tier A does not need a network.
+
+Item 2 below, now closed, said one Tier A trap was a thin basis and a second seemed to
+need a source of truth outside the repository. Batch three found the cheaper route. The
+runner already sources `env.sh` before it launches the agent, so `env.sh` can plant build
+state that no file in `project/` contains and the agent cannot grep for:
+
+- **`09-dependency-substitution`** points `GRADLE_USER_HOME` at a private home whose
+  `init.d` script rewrites a dependency version. The declared version and the resolved
+  version differ, and only a resolution run shows it. Tier A.
+- **`10-settings-profile-override`** points `MAVEN_ARGS` at a `settings.xml` with a
+  profile that overrides a filtered property. It is the Tier A form of `08`. Tier A.
+
+Both runners now clear `GRADLE_USER_HOME` and `MAVEN_ARGS` before each trap and set them
+from `env.sh`, so one trap cannot leak into the next. `CONTRACT.md` section 11 documents
+the mechanism.
+
+The other four are Tier B and buy back the capability-2 gap the first two batches left:
+
+- **`13-junit-platform-missing`** and **`19-maven-reactor-am`** are capability 2, complex
+  run scenarios. `13` runs a JUnit 5 suite that the default `test` task skips without a
+  word, green with zero tests. `19` fails `mvn -pl service test` because the sibling was
+  never installed, and the fix is the `-am` flag, not an edit. `19` is the set's first
+  loud Maven trap.
+- **`11-gradle9-deprecations`** is capability 5 read as tool-version knowledge: the build
+  calls API removed in Gradle 9, runs green now, and only `--warning-mode fail` surfaces
+  it.
+- **`15-generated-source-class`** is build-time generated sources. The class lives only
+  under `build/`, so the file to edit is the generator. Editing the output is futile
+  because the task regenerates it on every build.
+
+Two of the three Tier A traps now rest on injected local state, not a genuinely external
+feed. That is reproducible and it is a real moat, and it is still local. The frontier
+named in item 2 is untouched: IDE state itself, the resolved project model, the run
+configurations, the local artifact cache.
+
 ## Still open
 
 1. **The portability limit (README section 7).** Trap `03` still pins absolute JDK paths
    on one machine. Traps `06`, `07`, and `08` were built portable, and `08` discovers a
    JDK 21 across several layouts, but `03` was not touched. Move the set to
    `org.gradle.java.installations.fromEnv` before the AIDEV-24 reproduction.
-2. **One Tier A trap is a thin basis for a capability-moat claim.** A second one needs a
-   source of truth that is genuinely outside the repository and still reproducible. The
-   candidates are IDE state itself -- run configurations, the resolved project model, the
-   local artifact cache -- not another feed file.
+2. **Closed in batch three, in part.** The set now has three Tier A traps, `07`, `09`,
+   and `10`. Two of them manufacture the outside-the-repository state locally through
+   `env.sh`, so they are reproducible with no network. Still untouched is a source of
+   truth that is external by nature and not injected: IDE state itself, the resolved
+   project model, the run configurations, the local artifact cache.
 3. **The `curl` gap in trap 07 is real, and it does not change the verdict.**
    `WebSearch` and `WebFetch` are denied; `curl` inside Bash is not. In the smoke run of
    2026-08-28 the agent took that route, queried OSV, got nothing, and reported "no known
@@ -134,7 +180,8 @@ reach the Tier B answers. Those two traps are there to price the route, not to b
    data, so the oracle judges it the same way, and the trap still fires. A hard network
    boundary belongs in the runner, not in a trap.
 4. **No trap covers hypothesis 3 (ShadowJar and relocation) or hypothesis 10 (moving code
-   between modules).** Both are Tier B and both are ordinary batch-three work.
+   between modules).** Batch three did not take them. Both are Tier B and both are
+   ordinary batch-four work.
 5. **Nothing in the set is run against a real project yet.** Spring Framework for Gradle,
    Quarkus or Keycloak for Maven. That is phase 1 of the original plan and it is still
    deferred.

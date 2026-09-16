@@ -141,6 +141,9 @@ for slug in $TRAP_LIST; do
 
   # A trap about JDK versions may pin its own JAVA_HOME.
   BT_JAVA_HOME="$DEFAULT_JAVA_HOME"
+  # A trap about hidden build state may inject a Gradle home or Maven args from
+  # env.sh. Clear them each trap so one trap's env.sh cannot leak into the next.
+  unset GRADLE_USER_HOME MAVEN_ARGS
   # shellcheck disable=SC1091
   [ -f "$TRAP_DIR/env.sh" ] && . "$TRAP_DIR/env.sh"
   export BT_JAVA_HOME

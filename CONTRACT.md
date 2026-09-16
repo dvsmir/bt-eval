@@ -112,8 +112,9 @@ Pick the build tool that the trap is about. Do not use both in one trap.
   points at Maven 3.9.11. There is no wrapper jar to download.
 - Every plugin the build runs must be pinned in `pluginManagement`, and it must already be
   in the local repository, because the oracle builds with `-o`. Run the build once and
-  check. `maven-help-plugin` is **not** in the cache, so `help:active-profiles` and
-  `help:effective-pom` are closed to an offline agent. Do not add it.
+  check. `maven-help-plugin` **is** in the cache on this machine, so `help:active-profiles`,
+  `help:effective-pom`, and `help:evaluate` resolve offline. A trap that needs the direct
+  `help:` route closed cannot rely on the plugin being absent.
 - Use `ol_mvn` from `lib/oracle-lib.sh` in the oracle, not a bare `mvn`.
 
 **Both**
@@ -172,3 +173,22 @@ WebSearch,WebFetch
 Use it only when the trap needs it, and write the reason in the file as a comment. An
 argument that changes what the agent can do also changes what the number means, so the
 reason must be readable next to the trap.
+
+## 11. env.sh and injected build state
+
+`env.sh` can export more than `JAVA_HOME`. Two variables let a trap plant build state
+outside `project/`, where the agent cannot grep for it:
+
+- `GRADLE_USER_HOME` sets the Gradle home that holds `init.d/` and the caches. A trap
+  that hides a dependency substitution or an init script writes it there. See trap 09.
+- `MAVEN_ARGS` adds arguments to every `mvn` call, for example `-s <settings.xml>` to
+  point Maven at a settings file with a hidden profile. See trap 10.
+
+Both runners clear these two variables before each trap, then source `env.sh`, so one
+trap's state cannot leak into the next. `run.sh` sources `env.sh` into the shell that
+launches the agent and the oracle. `run.ps1` reads the values back through bash and sets
+them for both.
+
+Write the values in Windows form with `cygpath -w`, because the agent and the oracle run
+native Gradle and Maven. Use a path with no spaces: copy the file into `$TMPDIR` first.
+Maven's `-s` and a Gradle home both break on a path that contains a space.

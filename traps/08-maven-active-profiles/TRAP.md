@@ -25,14 +25,18 @@ answer is incomplete. Here the cheap answer is **wrong and it looks right**:
 `grep report.format pom.xml` returns exactly one line, `csv`, with no sign that anything
 overrides it. The agent has to already suspect profiles to know it must look further.
 
-The two closed routes make the cost real:
+Correction. An earlier version of this note said the direct route was closed offline.
+It is not. `maven-help-plugin` 3.5.2 is in the local repository, so both goals resolve
+with `-o`:
 
-- `mvn help:active-profiles` is the direct answer, and `maven-help-plugin` is not in the
-  local repository. Offline, that plugin cannot be downloaded, so the command fails.
-- `mvn help:effective-pom` fails for the same reason.
+- `./mvnw -o help:active-profiles` reports that `modern-runtime` is active.
+- `./mvnw -o help:effective-pom` prints `<report.format>parquet</report.format>`, the
+  overridden value, directly.
 
-What is left is a full `clean package` and then reading the filtered file, or the
-three-step chain of reasoning above. Both cost turns. That is the token signal.
+So an agent that thinks to ask Maven gets the right answer in one command, with no full
+build. The token signal is therefore small. What the trap still catches is the agent that
+does not think to ask: `grep report.format pom.xml` returns one line, `csv`, and a report
+built on that line is confidently wrong.
 
 ## Failure class
 
@@ -57,14 +61,18 @@ comes before the claim check.
 - **Show Effective POM** prints the model after profile application and property
   interpolation, so `report.format` reads `parquet` directly.
 - Because IDEA keeps a resolved project model in memory, both answers are already
-  computed. An agent-callable form of this is one call that returns the active profiles
-  and the effective property values -- against a Maven `clean package` plus a file read.
+  computed, with no command at all. The shell equivalent is `help:effective-pom`, which
+  also works offline, but only if the agent thinks to run it.
 
-The honest claim is therefore about **cost and about being right by default**, not about
-reach. A patient shell agent gets there. The measurement is how many of them are patient,
-and how much the patience costs.
+The honest claim is therefore about **being right by default**, not about cost or reach.
+A shell agent that suspects profiles gets there cheaply. The measurement is how many
+suspect at all, rather than trusting the POM they just read.
 
 ## What the shell agent must do instead
+
+1. `./mvnw -o help:effective-pom`, then read `report.format`
+
+or
 
 1. `./mvnw -o clean package`
 2. `cat service/target/classes/build-info.properties`
@@ -75,12 +83,12 @@ or
 2. `java -version` (or `./mvnw -o -version`)
 3. compose the two
 
-The oracle accepts either, because it judges the report and the shipped state, not the
-route.
+The oracle accepts any of these, because it judges the report and the shipped state, not
+the route.
 
 ## Offline
 
 `env.sh` pins `JAVA_HOME` to a JDK 21 on the machine, because the whole trap depends on
 the running JDK. The oracle builds with `-o`. Every plugin the build needs is pinned in
-`pluginManagement` and is expected in the local repository; `maven-help-plugin` is
-deliberately not.
+`pluginManagement` and is present in the local repository. `maven-help-plugin` 3.5.2 is
+present too, so `help:active-profiles` and `help:effective-pom` also resolve offline.

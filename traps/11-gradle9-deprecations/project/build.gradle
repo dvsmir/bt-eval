@@ -1,0 +1,18 @@
+plugins {
+    id 'application'
+}
+
+group = 'com.example.toolkit'
+version = '2.3.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+// The name of the packaged jar and distribution.
+archivesBaseName = 'release-toolkit'
+
+// The entry point run by `gradlew run` and the distribution scripts.
+mainClassName = 'com.example.toolkit.Main'

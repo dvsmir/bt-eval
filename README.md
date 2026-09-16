@@ -65,17 +65,32 @@ The Maven profile trap became `08` in the second batch.
 Trap `07` denies `WebSearch` and `WebFetch` through `agent-args.txt`. Trap `08` needs a
 JDK 17 or later, which its `env.sh` pins.
 
+## 3c. The third batch
+
+| Trap | Build tool | Tier | Class | Hidden information |
+|---|---|---|---|---|
+| `09-dependency-substitution` | Gradle | **A** | silent | A global `init.d` script substitutes the version of a dependency, so the version that resolves is not the one any file in `project/` declares. |
+| `10-settings-profile-override` | Maven | **A** | silent | A profile in an injected `settings.xml` overrides a filtered property, so the value in the POM is never the value that ships. |
+| `11-gradle9-deprecations` | Gradle | B | silent | The build calls Gradle API removed in Gradle 9. It runs green today and breaks on upgrade, and only `--warning-mode fail` surfaces it now. |
+| `13-junit-platform-missing` | Gradle | B | silent | The suite is JUnit 5 but the build never calls `useJUnitPlatform()`, so `test` runs zero tests and reports success. |
+| `15-generated-source-class` | Gradle | B | silent | A class exists only because a build task generates it into `build/`. The file to edit is the generator, not the generated output. |
+| `19-maven-reactor-am` | Maven | B | loud | `mvn -pl service test` fails because the sibling module was never installed. The fix is the `-am` flag, not an edit. |
+
+Traps `09` and `10` inject their hidden state through `env.sh`: a private `GRADLE_USER_HOME`
+with an `init.d` script for `09`, and `MAVEN_ARGS` pointing at a settings file for `10`.
+See CONTRACT.md section 11. Trap `19` needs no file change at all, the recovery is a flag.
+
 ## 3b. What the batches cover, and what they leave out
 
-`Hypothesis.md` lists ten scenarios. Two batches reach seven of them.
+`Hypothesis.md` lists ten scenarios. Three batches reach eight of them.
 
 | # | Hypothesis | Trap | Tier | Batch |
 |---|---|---|---|---|
 | 1 | Dependency scopes set wrong | `02-scope-leak` | B | 1 |
-| 2 | Complex run scenarios | partly `01` | B | 1 |
+| 2 | Complex run scenarios | `01`, `13`, `19` | B | 1, 3 |
 | 3 | ShadowJar and file relocation | -- | B | -- |
 | 4 | Failed Gradle builds | `03`, `04` | B | 1 |
-| 5 | Dependency updates | `06-latest-usable-version` | B | 2 |
+| 5 | Dependency updates | `06`, `11` | B | 2, 3 |
 | 6 | JDK and bytecode mismatch | `03-toolchain-mismatch` | B | 1 |
 | 7 | Vulnerabilities info | `07-known-vulnerability` | **A** | 2 |
 | 8 | Outdated dependencies | `06-latest-usable-version` | B | 2 |
@@ -83,6 +98,9 @@ JDK 17 or later, which its `env.sh` pins.
 | 10 | Move things between modules | -- | B | -- |
 | -- | Conflict resolution picks another version | `05-version-conflict` | B | 1 |
 | -- | Maven profile activated by the JDK | `08-maven-active-profiles` | B | 2 |
+| -- | Dependency substitution by a global init script | `09-dependency-substitution` | **A** | 3 |
+| -- | Maven settings.xml profile override | `10-settings-profile-override` | **A** | 3 |
+| -- | Build-time generated sources | `15-generated-source-class` | B | 3 |
 
 ### What the first batch showed, and what the second batch changed
 
@@ -114,6 +132,21 @@ So the honest position after two batches is **one Tier A trap out of eight**. Th
 capability-moat claim in the Order rests on a single measurement, and that measurement
 is about honesty under missing data rather than about retrieval. Read `NEXT-BATCH.md`
 for what is still open.
+
+### What the third batch changed
+
+The third batch adds **two more Tier A traps**, `09` and `10`, so the set now holds
+**three Tier A traps out of fourteen**. Both new ones make their moat without a network.
+The runner injects the deciding state through `env.sh`: a Gradle `init.d` script that
+substitutes a dependency version for `09`, and a Maven `settings.xml` profile reached
+through `MAVEN_ARGS` for `10`. The state sits outside every `project/`, so the agent
+cannot grep for it, and nothing has to be downloaded. This is the same moat shape as
+`07`, built from local files instead of a feed.
+
+The batch also gives capability 2, complex run scenarios, its first direct coverage.
+`13` runs a JUnit 5 suite that the default `test` task skips in silence, and `19` needs a
+reactor flag the default command omits. Eight of the ten hypotheses now have a trap. The
+two that remain, ShadowJar relocation and moving code between modules, are still open.
 
 ## 4. Layout
 
