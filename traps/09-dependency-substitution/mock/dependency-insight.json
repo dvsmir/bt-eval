@@ -1,0 +1,15 @@
+{
+  "tool": "bt-ide",
+  "command": "dependency-insight",
+  "project": "widget-shop",
+  "module": ":app",
+  "configuration": "runtimeClasspath",
+  "dependency": "com.acme:widgets",
+  "requested": "2.0.0",
+  "selected": "1.0.0",
+  "selectionReason": "Forced. A resolutionStrategy.eachDependency rule calls useVersion for com.acme:widgets. The rule lives in a Gradle initialization script under the Gradle user home (init.d), outside the project tree, and it overrides the version catalog request of 2.0.0.",
+  "source": "init script (GRADLE_USER_HOME/init.d)",
+  "paths": [
+    "app -> com.acme:widgets:2.0.0 -> 1.0.0 (forced by init script)"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "tool": "bt-ide",
+  "command": "deps",
+  "project": "acme-ledger",
+  "module": ":ledger-service",
+  "configurations": {
+    "compileClasspath": [
+      { "coordinate": "project :platform-core", "requested": "project(:platform-core)", "selected": "project(:platform-core)", "bucket": "compileOnly", "declaredBy": "com.acme.service-conventions plugin, through a platformLibs bucket that extends compileOnly" }
+    ],
+    "runtimeClasspath": []
+  },
+  "notes": [
+    "project(:platform-core) reaches ledger-service through the platformLibs configuration created by the com.acme.service-conventions convention plugin. That configuration extends compileOnly, so platform-core is on compileClasspath but not on runtimeClasspath.",
+    "The ledger-service main sources (com.acme.ledger.LedgerApp) import com.acme.platform.money.Money and com.acme.platform.money.MoneyFormatter, which are absent from the runtime classpath."
+  ]
+}

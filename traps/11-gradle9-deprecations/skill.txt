@@ -1,0 +1,5 @@
+# One shared skill per line, from bt-eval/skills/. Comments and blank lines ignored.
+# The runner installs each under --skill, and if this trap has a mock/ directory it also
+# puts the mock CLI (lib/mock/) on PATH and serves mock/*.json through it.
+# Keep the skill a general capability, never this trap's answer. See CONTRACT.md section 12.
+inspect

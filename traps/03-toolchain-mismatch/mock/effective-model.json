@@ -1,0 +1,50 @@
+{
+  "tool": "bt-ide",
+  "command": "effective-model",
+  "buildSystem": "gradle",
+  "project": "telemetry",
+  "properties": {
+    "telemetry.toolchain": "17",
+    "telemetry.collectorRuntime": "11"
+  },
+  "modules": [
+    {
+      "module": ":collector-api",
+      "plugins": ["telemetry.library"],
+      "java": {
+        "toolchainLanguageVersion": "17",
+        "compileRelease": { "effective": "11", "source": "telemetry.collectorRuntime property, applied as options.release by the telemetry.library convention plugin" }
+      },
+      "compileStatus": "OK",
+      "note": "options.release=11 produces class file major version 55. The verifyCollectorBytecode check in this module requires major 55, so this module must stay at release 11."
+    },
+    {
+      "module": ":pipeline",
+      "plugins": ["telemetry.library"],
+      "java": {
+        "toolchainLanguageVersion": "17",
+        "compileRelease": { "effective": "11", "source": "telemetry.collectorRuntime via telemetry.library" }
+      },
+      "compileStatus": "OK"
+    },
+    {
+      "module": ":report",
+      "plugins": ["telemetry.library"],
+      "java": {
+        "toolchainLanguageVersion": "21",
+        "compileRelease": { "effective": "11", "source": "telemetry.collectorRuntime via telemetry.library" }
+      },
+      "compileStatus": "FAILED",
+      "diagnostic": "options.release=11 comes from the telemetry.library convention and overrides the module toolchain (21). The report sources use Java 21 APIs (a record and List.getFirst / List.getLast), so javac with --release 11 rejects them at :report:compileJava."
+    },
+    {
+      "module": ":app",
+      "plugins": ["telemetry.java-base"],
+      "java": {
+        "toolchainLanguageVersion": "17",
+        "compileRelease": { "effective": "unset", "source": "telemetry.java-base applies no options.release" }
+      },
+      "compileStatus": "OK"
+    }
+  ]
+}

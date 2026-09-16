@@ -1,0 +1,32 @@
+#!/usr/bin/env python
+"""Mock IDE-backed CLI for the eval.
+
+It returns canned output from a trap's fixtures, so a skill that teaches an agent to
+call a tool can be measured without a real backend. The runner puts this script on
+PATH and sets BT_MOCK_DIR to the fixture directory. Each subcommand maps to one file,
+<BT_MOCK_DIR>/<command>.json, and the script prints that file verbatim.
+"""
+import os
+import sys
+
+
+def main() -> int:
+    if len(sys.argv) < 2:
+        sys.stderr.write("usage: bt-ide <command> [args]\n")
+        return 2
+    cmd = sys.argv[1]
+    base = os.environ.get("BT_MOCK_DIR")
+    if not base:
+        sys.stderr.write("bt-ide: BT_MOCK_DIR is not set\n")
+        return 2
+    path = os.path.join(base, cmd + ".json")
+    if not os.path.isfile(path):
+        sys.stderr.write("bt-ide: no data for command '%s'\n" % cmd)
+        return 2
+    with open(path, encoding="utf-8") as handle:
+        sys.stdout.write(handle.read())
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

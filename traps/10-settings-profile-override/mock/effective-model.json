@@ -1,0 +1,22 @@
+{
+  "tool": "bt-ide",
+  "command": "effective-model",
+  "buildSystem": "maven",
+  "project": "ingest-parent",
+  "runtimeJdk": "21",
+  "activeProfiles": [
+    { "id": "corp-runtime", "activation": "activeByDefault", "source": "user settings file (settings.xml under the Maven home, outside the project)", "active": true }
+  ],
+  "modules": [
+    {
+      "module": "ingest-service",
+      "properties": {
+        "sink.format": { "effective": "avro", "source": "profile corp-runtime (user settings)", "pomDefault": "csv" },
+        "sink.batch.size": { "effective": "100000", "source": "profile corp-runtime (user settings)", "pomDefault": "500" }
+      },
+      "filteredResources": [
+        "src/main/resources/build-info.properties -> target/classes/build-info.properties (sink.format and sink.batch.size expanded from the effective model)"
+      ]
+    }
+  ]
+}

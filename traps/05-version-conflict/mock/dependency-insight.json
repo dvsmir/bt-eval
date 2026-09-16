@@ -1,0 +1,15 @@
+{
+  "tool": "bt-ide",
+  "command": "dependency-insight",
+  "project": "audit-tools",
+  "module": ":report",
+  "configuration": "runtimeClasspath",
+  "dependency": "com.example.fakelib:fakelib",
+  "requested": "1.0",
+  "selected": "2.0",
+  "selectionReason": "conflict resolution: the highest version wins between the direct request of 1.0 and the transitive 2.0",
+  "paths": [
+    "report -> com.example.fakelib:fakelib:1.0 -> 2.0 (selected by conflict resolution)",
+    "report -> com.example.acme:acme-audit:1.4 -> com.example.acme:acme-core:2.2 (runtime) -> com.example.fakelib:fakelib:2.0"
+  ]
+}

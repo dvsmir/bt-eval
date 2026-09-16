@@ -1,0 +1,11 @@
+{
+  "tool": "bt-ide",
+  "command": "deps",
+  "project": "widget-shop",
+  "module": ":app",
+  "configurations": {
+    "runtimeClasspath": [
+      { "coordinate": "com.acme:widgets:1.0.0", "requested": "2.0.0", "selected": "1.0.0", "bucket": "implementation", "selectionReason": "forced to 1.0.0 by a resolutionStrategy.eachDependency rule defined in a Gradle initialization script outside the project, which overrides the version catalog request of 2.0.0" }
+    ]
+  }
+}

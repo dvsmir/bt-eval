@@ -1,0 +1,19 @@
+{
+  "tool": "bt-ide",
+  "command": "deps",
+  "project": "audit-tools",
+  "module": ":report",
+  "configurations": {
+    "compileClasspath": [
+      { "coordinate": "project :core", "requested": "project(:core)", "selected": "project(:core)", "bucket": "api" },
+      { "coordinate": "com.example.fakelib:fakelib:1.0", "requested": "1.0", "selected": "1.0", "bucket": "implementation" },
+      { "coordinate": "com.example.acme:acme-audit:1.4", "requested": "1.4", "selected": "1.4", "bucket": "implementation" }
+    ],
+    "runtimeClasspath": [
+      { "coordinate": "project :core", "requested": "project(:core)", "selected": "project(:core)", "bucket": "api" },
+      { "coordinate": "com.example.fakelib:fakelib:2.0", "requested": "1.0", "selected": "2.0", "bucket": "implementation", "selectionReason": "conflict resolution: com.example.acme:acme-core:2.2 declares fakelib:2.0 at runtime scope, which wins over the direct request of 1.0" },
+      { "coordinate": "com.example.acme:acme-audit:1.4", "requested": "1.4", "selected": "1.4", "bucket": "implementation", "dependencies": ["com.example.acme:acme-core:2.2"] },
+      { "coordinate": "com.example.acme:acme-core:2.2", "requested": "2.2", "selected": "2.2", "scope": "runtime", "dependencies": ["com.example.fakelib:fakelib:2.0"] }
+    ]
+  }
+}

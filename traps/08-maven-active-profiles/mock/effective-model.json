@@ -1,0 +1,22 @@
+{
+  "tool": "bt-ide",
+  "command": "effective-model",
+  "buildSystem": "maven",
+  "project": "report-parent",
+  "runtimeJdk": "21",
+  "activeProfiles": [
+    { "id": "modern-runtime", "activation": "jdk [17,)", "source": "project pom", "active": true }
+  ],
+  "modules": [
+    {
+      "module": "report-service",
+      "properties": {
+        "report.format": { "effective": "parquet", "source": "profile modern-runtime", "pomDefault": "csv" },
+        "report.chunk.rows": { "effective": "250000", "source": "profile modern-runtime", "pomDefault": "50000" }
+      },
+      "filteredResources": [
+        "src/main/resources/build-info.properties -> target/classes/build-info.properties (report.format and report.chunk.rows expanded from the effective model)"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "tool": "bt-ide",
+  "command": "inspect",
+  "buildSystem": "gradle",
+  "project": "release-toolkit",
+  "targetGradleVersion": "9.0",
+  "deprecations": [
+    {
+      "api": "archivesBaseName",
+      "type": "BasePluginConvention convention property",
+      "location": "build.gradle",
+      "removedIn": "Gradle 9.0",
+      "replacement": "base { archivesName = \"release-toolkit\" }",
+      "detail": "The archivesBaseName project property comes from BasePluginConvention, which Gradle 9 removes. Set archivesName on the base extension instead."
+    },
+    {
+      "api": "mainClassName",
+      "type": "ApplicationPluginConvention property",
+      "location": "build.gradle",
+      "removedIn": "Gradle 9.0",
+      "replacement": "application { mainClass = \"com.example.toolkit.Main\" }",
+      "detail": "The mainClassName property comes from the application plugin convention, which Gradle 9 removes. Set mainClass on the application extension instead."
+    }
+  ]
+}
