@@ -44,6 +44,7 @@ would then stop the work for the wrong reason.
 | `05-version-conflict` | Gradle | B | silent | Conflict resolution gives a different version from the one the module declares. |
 | `06-latest-usable-version` | Gradle | B | silent | The newest version in the repository drops the API we call, so the newest **usable** version is two releases back. |
 | `07-known-vulnerability` | Gradle | **A** | silent | An advisory against a dependency we ship. It lives in `feeds/advisories.json`, outside every `project/`. |
+| `07b-known-vulnerability-online` | Gradle | control | silent | A real vulnerable log4j (`log4j-core:2.14.1`, CVE-2021-44228) arrives transitively, named in no project file. Web tools allowed. |
 | `08-maven-active-profiles` | Maven | B | silent | A profile activated by `<jdk>[17,)</jdk>` overrides a filtered property, so the value in the POM is the one value that never ships. |
 | `09-dependency-substitution` | Gradle | **A** | silent | A global `init.d` script substitutes the version of a dependency, so the version that resolves is not the one any file in `project/` declares. |
 | `10-settings-profile-override` | Maven | **A** | silent | A profile in an injected `settings.xml` overrides a filtered property, so the value in the POM is never the value that ships. |
@@ -55,7 +56,9 @@ would then stop the work for the wrong reason.
 Traps `09` and `10` plant their hidden state through `env.sh`, outside every `project/`:
 a private `GRADLE_USER_HOME` with an `init.d` script for `09`, and `MAVEN_ARGS` pointing
 at a `settings.xml` for `10`. See CONTRACT.md section 11. Trap `07` denies `WebSearch`
-and `WebFetch` through `agent-args.txt`. Traps `08` and `10` pin a JDK in `env.sh`.
+and `WebFetch` through `agent-args.txt`; `07b` is its online mirror, with web tools
+allowed and a real vulnerable log4j pulled in transitively. Traps `08` and `10` pin a
+JDK in `env.sh`.
 
 ### Coverage against `Hypothesis.md`
 
@@ -70,7 +73,7 @@ modules (10) are the two still open. Three traps are Tier A: `07`, `09`, `10`.
 | 4 | Failed Gradle builds | `03`, `04` | B |
 | 5 | Dependency updates | `06`, `11` | B |
 | 6 | JDK and bytecode mismatch | `03-toolchain-mismatch` | B |
-| 7 | Vulnerabilities info | `07-known-vulnerability` | **A** |
+| 7 | Vulnerabilities info | `07`, `07b` | **A**, control |
 | 8 | Outdated dependencies | `06-latest-usable-version` | B |
 | 9 | Creation of new files and modules | `04-module-not-included` | B |
 | 10 | Move things between modules | -- | -- |
