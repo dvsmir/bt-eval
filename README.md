@@ -174,9 +174,11 @@ the tool definitions before it touches the task. Measured on this machine with
 `sonnet`: about **8,900 tokens** with a warm prompt cache, but about **35,000** on a
 cold cache. So the overhead is both large and unstable. If the task work is 20,000
 tokens, a saving of half of it shows as a much smaller share of the raw total.
-`--calibrate` measures the fixed cost, and `summarize.py` reports a `med task` column
-with it removed. Calibrate in the same session as the run, and say which number you
-quote.
+`--calibrate` measures the fixed cost and saves it to `results/calibration.csv`. Every
+later `summarize.py` finds that file by walking up from the results path. It subtracts
+the overhead and reports a `med task` column without it. Calibrate once per model, in
+the same session as the run so the cache state matches. Name the number you quote. To
+read a specific calibration file, pass `--calibration <file>`.
 
 **Run the agent outside this repository.** Claude Code collects every `CLAUDE.md`
 from the working directory upwards. A scratch directory inside `AI workspace/` gives

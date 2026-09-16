@@ -93,10 +93,16 @@ calibrate() {
       --output-format json --model "$MODEL" ) >"$dir/result.json" 2>"$dir/stderr.log"
   python "$HERE/lib/append_row.py" "$OUT" "$dir/result.json" \
     "_calibration" "0" "PASS" "fixed harness overhead" "$MODEL" "0" "$STAMP"
+  # Persist the calibration where a later trap run can find it. summarize.py walks
+  # up from results/<stamp>/results.csv and reads results/calibration.csv, so one
+  # calibration serves every run that follows, with no need to force -o onto one file.
+  mkdir -p "$HERE/results"
+  python "$HERE/lib/append_row.py" "$HERE/results/calibration.csv" "$dir/result.json" \
+    "_calibration" "0" "PASS" "fixed harness overhead" "$MODEL" "0" "$STAMP"
   local total
   total="$(python "$HERE/lib/jsonget.py" "$dir/result.json" usage.cache_creation_input_tokens 0)"
   printf 'Fixed overhead (cache_creation_input_tokens): %s\n' "$total"
-  printf 'Recorded as trap "_calibration" in %s\n' "$OUT"
+  printf 'Recorded as trap "_calibration" in %s\n' "$HERE/results/calibration.csv"
 }
 
 if [ "$CALIBRATE" = "1" ]; then

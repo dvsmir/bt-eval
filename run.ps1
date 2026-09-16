@@ -243,10 +243,17 @@ if ($Calibrate) {
     -ExtraArgs @() -TimeoutSeconds $TimeoutSec -JavaHomeForRun $JavaHomeWin
   & $Python.Source (Join-Path $HERE 'lib\append_row.py') $Out (Join-Path $dir 'result.json') `
     '_calibration' '0' 'PASS' 'fixed harness overhead' $Model '0' $Stamp
+  $calStore = Join-Path $HERE 'results\calibration.csv'
+  New-Item -ItemType Directory -Force -Path (Join-Path $HERE 'results') | Out-Null
+  # Persist the calibration where a later trap run can find it. summarize.py walks up
+  # from results\<stamp>\results.csv and reads results\calibration.csv, so one
+  # calibration serves every run that follows, with no need to force -Out onto one file.
+  & $Python.Source (Join-Path $HERE 'lib\append_row.py') $calStore (Join-Path $dir 'result.json') `
+    '_calibration' '0' 'PASS' 'fixed harness overhead' $Model '0' $Stamp
   $fixed = & $Python.Source (Join-Path $HERE 'lib\jsonget.py') (Join-Path $dir 'result.json') `
     'usage.cache_creation_input_tokens' '0'
   Write-Host "Fixed overhead (cache_creation_input_tokens): $fixed"
-  Write-Host "Recorded as trap _calibration in $Out"
+  Write-Host "Recorded as trap _calibration in $calStore"
   exit 0
 }
 
