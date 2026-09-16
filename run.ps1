@@ -43,6 +43,7 @@ param(
   [string]   $BashExe = '',
   # Remove the fair baseline CLAUDE.md. Inflates any saving. See README section 6.
   [switch]   $Naive,
+  [switch]   $Skill,
   [switch]   $Calibrate,
   [switch]   $DryRun
 )
@@ -199,14 +200,20 @@ function Invoke-Claude {
     [Parameter(Mandatory)][string] $StderrFile,
     [Parameter(Mandatory)][AllowEmptyCollection()][string[]] $ExtraArgs,
     [Parameter(Mandatory)][int]    $TimeoutSeconds,
-    [Parameter(Mandatory)][string] $JavaHomeForRun
+    [Parameter(Mandatory)][string] $JavaHomeForRun,
+    [string] $ExtraPath = '',
+    [string] $MockDir = ''
   )
   $argv = @('-p', '--output-format', 'json', '--model', $Model) + $ExtraArgs
   $prev = Get-Location
   $prevJava = $env:JAVA_HOME
+  $prevPath = $env:PATH
+  $prevMock = $env:BT_MOCK_DIR
   try {
     Set-Location -LiteralPath $WorkDir
     $env:JAVA_HOME = $JavaHomeForRun
+    if ($ExtraPath) { $env:PATH = "$ExtraPath;$env:PATH" }
+    $env:BT_MOCK_DIR = $MockDir
     $proc = Start-Process -FilePath $Claude.Source -ArgumentList $argv `
       -RedirectStandardInput $PromptFile `
       -RedirectStandardOutput $StdoutFile `
@@ -222,6 +229,8 @@ function Invoke-Claude {
   }
   finally {
     $env:JAVA_HOME = $prevJava
+    $env:PATH = $prevPath
+    $env:BT_MOCK_DIR = $prevMock
     Set-Location -LiteralPath $prev
   }
 }
@@ -242,14 +251,14 @@ if ($Calibrate) {
     -StderrFile (Join-Path $dir 'stderr.log') `
     -ExtraArgs @() -TimeoutSeconds $TimeoutSec -JavaHomeForRun $JavaHomeWin
   & $Python.Source (Join-Path $HERE 'lib\append_row.py') $Out (Join-Path $dir 'result.json') `
-    '_calibration' '0' 'PASS' 'fixed harness overhead' $Model '0' $Stamp
+    '_calibration' '0' 'PASS' 'fixed harness overhead' $Model '0' $Stamp 'calibration'
   $calStore = Join-Path $HERE 'results\calibration.csv'
   New-Item -ItemType Directory -Force -Path (Join-Path $HERE 'results') | Out-Null
   # Persist the calibration where a later trap run can find it. summarize.py walks up
   # from results\<stamp>\results.csv and reads results\calibration.csv, so one
   # calibration serves every run that follows, with no need to force -Out onto one file.
   & $Python.Source (Join-Path $HERE 'lib\append_row.py') $calStore (Join-Path $dir 'result.json') `
-    '_calibration' '0' 'PASS' 'fixed harness overhead' $Model '0' $Stamp
+    '_calibration' '0' 'PASS' 'fixed harness overhead' $Model '0' $Stamp 'calibration'
   $fixed = & $Python.Source (Join-Path $HERE 'lib\jsonget.py') (Join-Path $dir 'result.json') `
     'usage.cache_creation_input_tokens' '0'
   Write-Host "Fixed overhead (cache_creation_input_tokens): $fixed"
@@ -276,6 +285,7 @@ Write-Host ('Model     : {0}' -f $Model)
 Write-Host ('Repeats   : {0}' -f $Repeats)
 Write-Host ('Traps     : {0}' -f ($trapList -join ' '))
 Write-Host ('Baseline  : {0}' -f $baselineLabel)
+Write-Host ('Skill     : {0}' -f $(if ($Skill) { 'on (install declared skills)' } else { 'off' }))
 Write-Host ('Java home : {0}' -f $JavaHomeWin)
 Write-Host ('Bash      : {0}' -f $Bash)
 Write-Host ('Results   : {0}' -f $Out)
@@ -347,6 +357,42 @@ foreach ($slug in $trapList) {
       Copy-Item -LiteralPath $baseline -Destination (Join-Path $work 'CLAUDE.md') -Force
     }
 
+    # A skill run installs the trap's declared skills into the session, and if the trap
+    # ships mock fixtures it puts the mock CLI on PATH and serves them. The agent then
+    # sees the skill and the tool as a user who had installed them would. skill.txt names
+    # one shared skill per line. Comments and blank lines are ignored.
+    $condition = 'baseline'
+    $skillBin = ''
+    $mockDir = ''
+    $skillFile = Join-Path $trapDir 'skill.txt'
+    if ($Skill -and (Test-Path -LiteralPath $skillFile)) {
+      $skillNames = @(Get-Content -LiteralPath $skillFile |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_ -and -not $_.StartsWith('#') })
+      foreach ($sname in $skillNames) {
+        $skillSrc = Join-Path $HERE ('skills\' + $sname)
+        if (Test-Path -LiteralPath $skillSrc) {
+          $skillDst = Join-Path $work '.claude\skills'
+          New-Item -ItemType Directory -Force -Path $skillDst | Out-Null
+          Copy-Item -LiteralPath $skillSrc -Destination $skillDst -Recurse -Force
+          $condition = 'skill'
+        }
+        else {
+          Write-Host "WARN ${slug}: skill '$sname' not found in skills\" -ForegroundColor Yellow
+        }
+      }
+      # Serve the trap's mock fixtures through the shared CLI. Both sit outside the
+      # agent's working tree, so the answer reaches the agent only through the tool.
+      if ($condition -eq 'skill' -and (Test-Path -LiteralPath (Join-Path $trapDir 'mock'))) {
+        $runRoot = Split-Path $work -Parent
+        $skillBin = Join-Path $runRoot 'bin'
+        $mockDir = Join-Path $runRoot 'mock'
+        New-Item -ItemType Directory -Force -Path $skillBin, $mockDir | Out-Null
+        Copy-Item -Path (Join-Path $HERE 'lib\mock\*') -Destination $skillBin -Force
+        Copy-Item -Path (Join-Path $trapDir 'mock\*') -Destination $mockDir -Force
+      }
+    }
+
     # A trap may need extra flags on the claude command. Trap 07 denies the web
     # tools, because a question it asks is only meaningful when the agent cannot
     # look the answer up. One argument per line, blank lines and # comments ignored.
@@ -368,7 +414,7 @@ foreach ($slug in $trapList) {
     $finished = Invoke-Claude -WorkDir $work -PromptFile (Join-Path $trapDir 'TASK.md') `
       -StdoutFile $resultJson -StderrFile $stderrLog `
       -ExtraArgs (@('--permission-mode', 'bypassPermissions') + $trapArgs) `
-      -TimeoutSeconds $TimeoutSec -JavaHomeForRun $trapJavaWin
+      -TimeoutSeconds $TimeoutSec -JavaHomeForRun $trapJavaWin -ExtraPath $skillBin -MockDir $mockDir
     $sw.Stop()
     $wall = [int]$sw.Elapsed.TotalSeconds
     if (-not $finished) {
@@ -399,7 +445,7 @@ foreach ($slug in $trapList) {
     Set-Content -LiteralPath (Join-Path $workRoot 'verdict.txt') -Value "$line" -Encoding utf8
 
     & $Python.Source (Join-Path $HERE 'lib\append_row.py') $Out $resultJson `
-      $slug $i $verdict $detail $Model $wall $Stamp
+      $slug $i $verdict $detail $Model $wall $Stamp $condition
 
     Write-Host ('{0,-12} {1} ({2}s)' -f $verdict, $detail, $wall)
 

@@ -2,7 +2,7 @@
 """Append one measured run to the results CSV.
 
 Usage:
-  append_row.py <csv> <result.json> <trap> <run> <verdict> <detail> <model> <wall_s> <ts>
+  append_row.py <csv> <result.json> <trap> <run> <verdict> <detail> <model> <wall_s> <ts> [<condition>]
 
 The script creates the header when the file does not exist. It also computes
 total_tokens, because the token target of the Order needs one comparable number.
@@ -16,6 +16,7 @@ FIELDS = [
     "trap", "run", "verdict", "detail", "is_error", "stop_reason", "num_turns",
     "duration_ms", "input_tokens", "output_tokens", "cache_read", "cache_creation",
     "total_tokens", "billable_tokens", "cost_usd", "model", "wall_s", "ts",
+    "condition",
 ]
 
 
@@ -26,6 +27,9 @@ def main() -> int:
     csv_path, json_path = sys.argv[1], sys.argv[2]
     trap, run_no, verdict, detail = sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6]
     model, wall_s, stamp = sys.argv[7], sys.argv[8], sys.argv[9]
+    # Which experimental condition produced this row: "baseline", "skill" or
+    # "calibration". Optional and trailing, so older callers keep working.
+    condition = sys.argv[10] if len(sys.argv) > 10 else "baseline"
 
     data = {}
     try:
@@ -69,6 +73,7 @@ def main() -> int:
         "model": model,
         "wall_s": wall_s,
         "ts": stamp,
+        "condition": condition,
     }
 
     exists = os.path.exists(csv_path) and os.path.getsize(csv_path) > 0

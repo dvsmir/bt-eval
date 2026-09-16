@@ -23,6 +23,8 @@ traps/NN-slug/
   oracle.sh      The script that decides PASS or FAIL.
   env.sh         Optional. The runner sources it to set JAVA_HOME or other variables.
   agent-args.txt Optional. Extra command line arguments for the agent. See section 10.
+  skill.txt      Optional. Names the skills to install under --skill. See section 12.
+  mock/          Optional. JSON the mock CLI prints under --skill. See section 12.
   project/       The complete build project. The agent gets a copy of this directory.
 ```
 
@@ -192,3 +194,38 @@ them for both.
 Write the values in Windows form with `cygpath -w`, because the agent and the oracle run
 native Gradle and Maven. Use a path with no spaces: copy the file into `$TMPDIR` first.
 Maven's `-s` and a Gradle home both break on a path that contains a space.
+## 12. skill.txt, the skills library, and mock tools
+
+A skill is knowledge packaged so a session loads it. The eval measures
+whether a skill lowers the token cost of a trap. Run the same trap twice, once without
+the skill and once with it, then compare the two result files.
+
+Skills live in `skills/<name>/`, one directory per skill, each with a `SKILL.md`. A skill
+is written once and measured against many traps, so it stays a general capability. Do not
+tune a skill to one trap, and never put a trap's answer in it. A skill that encodes the
+answer measures nothing, the same rule as section 3.
+
+`skill.txt` in a trap names the skills that trap exercises, one per line. Blank lines and
+`#` comments are ignored. The runner installs each named skill only when you pass
+`--skill` (`-Skill` on Windows). It copies `skills/<name>/` into the session's
+`.claude/skills/<name>/`, where a headless run loads it as a user's own skill.
+
+Most skills teach the agent to call a CLI instead of discovering a fact the slow way. The
+CLI is mocked. The shared shim is `lib/mock/bt-ide`, a small script that prints a canned
+answer. Each trap that uses it ships a `mock/` directory with one JSON file per subcommand:
+`mock/<command>.json` is what `bt-ide <command>` prints. Under `--skill` the runner copies
+the shim to a scratch `bin/` on PATH and points `BT_MOCK_DIR` at the copied `mock/`. The
+agent runs `bt-ide audit`, reads the JSON, and skips the dependency graph and the online
+lookup the baseline pays for. That skipped work is the token saving.
+
+The mock output must be realistic tool output, never the oracle's answer string. The fixture
+lives outside the agent's working tree and reaches the agent only through the tool, so the
+skill measures a capability and not a planted answer.
+
+The condition is recorded in the `condition` column of the results CSV: `baseline` for a
+plain run, `skill` when a skill was installed. Compare cost with the raw `billable`
+number, not the calibrated one. A skill's name and description sit in the system prompt on
+every turn, so its always-on cost is real and must count against it.
+
+TASK.md and oracle.sh do not change between the two conditions. Only the skill and its mock
+are added, so any difference in cost or pass rate is the skill's effect and nothing else.

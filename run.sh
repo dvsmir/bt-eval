@@ -13,6 +13,7 @@
 #   ./run.sh -t 01-a,02-b -n 3        two traps, 3 repeats
 #   ./run.sh --calibrate              measure the fixed harness overhead only
 #   ./run.sh --naive                  remove the fair baseline CLAUDE.md
+#   ./run.sh --skill                  install the trap's declared skill(s), then run
 #   ./run.sh --dry-run                show the plan, run nothing
 #   ./run.sh -s /tmp/other            put the scratch tree somewhere else
 #
@@ -37,6 +38,7 @@ OUT=""
 TIMEOUT_S=1200
 NAIVE=0
 CALIBRATE=0
+SKILL=0
 SCRATCH_ROOT="$DEFAULT_SCRATCH_ROOT"
 DRYRUN=0
 
@@ -51,6 +53,7 @@ while [ $# -gt 0 ]; do
     -T) TIMEOUT_S="$2"; shift 2 ;;
     -s) SCRATCH_ROOT="$2"; shift 2 ;;
     --naive) NAIVE=1; shift ;;
+    --skill) SKILL=1; shift ;;
     --calibrate) CALIBRATE=1; shift ;;
     --dry-run) DRYRUN=1; shift ;;
     -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
@@ -92,13 +95,13 @@ calibrate() {
   ( cd "$dir" && claude -p "Reply with exactly: OK" \
       --output-format json --model "$MODEL" ) >"$dir/result.json" 2>"$dir/stderr.log"
   python "$HERE/lib/append_row.py" "$OUT" "$dir/result.json" \
-    "_calibration" "0" "PASS" "fixed harness overhead" "$MODEL" "0" "$STAMP"
+    "_calibration" "0" "PASS" "fixed harness overhead" "$MODEL" "0" "$STAMP" "calibration"
   # Persist the calibration where a later trap run can find it. summarize.py walks
   # up from results/<stamp>/results.csv and reads results/calibration.csv, so one
   # calibration serves every run that follows, with no need to force -o onto one file.
   mkdir -p "$HERE/results"
   python "$HERE/lib/append_row.py" "$HERE/results/calibration.csv" "$dir/result.json" \
-    "_calibration" "0" "PASS" "fixed harness overhead" "$MODEL" "0" "$STAMP"
+    "_calibration" "0" "PASS" "fixed harness overhead" "$MODEL" "0" "$STAMP" "calibration"
   local total
   total="$(python "$HERE/lib/jsonget.py" "$dir/result.json" usage.cache_creation_input_tokens 0)"
   printf 'Fixed overhead (cache_creation_input_tokens): %s\n' "$total"
@@ -128,6 +131,7 @@ printf 'Model     : %s\n' "$MODEL"
 printf 'Repeats   : %s\n' "$REPEATS"
 printf 'Traps     : %s\n' "$TRAP_LIST"
 printf 'Baseline  : %s\n' "$([ "$NAIVE" = "1" ] && echo 'naive (no CLAUDE.md)' || echo 'fair (BASELINE_CLAUDE.md)')"
+printf 'Skill     : %s\n' "$([ "$SKILL" = "1" ] && echo 'on (install declared skills)' || echo 'off')"
 printf 'Results   : %s\n\n' "$OUT"
 
 if [ "$DRYRUN" = "1" ]; then
@@ -170,6 +174,36 @@ for slug in $TRAP_LIST; do
       cp "$HERE/template/BASELINE_CLAUDE.md" "$WORK/CLAUDE.md"
     fi
 
+    # A skill run installs the trap's declared skills into the session, and if the trap
+    # ships mock fixtures it puts the mock CLI on PATH and serves them. The agent then
+    # sees the skill and the tool as a user who had installed them would. skill.txt names
+    # one shared skill per line. Comments and blank lines are ignored.
+    CONDITION="baseline"
+    SKILL_BIN=""
+    MOCK_DIR=""
+    if [ "$SKILL" = "1" ] && [ -f "$TRAP_DIR/skill.txt" ]; then
+      while IFS= read -r sname || [ -n "$sname" ]; do
+        case "$sname" in ''|'#'*) continue ;; esac
+        if [ -d "$HERE/skills/$sname" ]; then
+          mkdir -p "$WORK/.claude/skills"
+          cp -r "$HERE/skills/$sname" "$WORK/.claude/skills/$sname"
+          CONDITION="skill"
+        else
+          printf 'WARN %s: skill "%s" not found in skills/\n' "$slug" "$sname" >&2
+        fi
+      done < "$TRAP_DIR/skill.txt"
+      # Serve the trap's mock fixtures through the shared CLI. Both sit outside the
+      # agent's working tree, so the answer reaches the agent only through the tool.
+      if [ "$CONDITION" = "skill" ] && [ -d "$TRAP_DIR/mock" ]; then
+        SKILL_BIN="$SCRATCH/$slug/run$i/bin"
+        MOCK_DIR="$SCRATCH/$slug/run$i/mock"
+        mkdir -p "$SKILL_BIN" "$MOCK_DIR"
+        cp "$HERE"/lib/mock/* "$SKILL_BIN"/ 2>/dev/null
+        chmod +x "$SKILL_BIN"/bt-ide 2>/dev/null
+        cp "$TRAP_DIR/mock/"* "$MOCK_DIR"/ 2>/dev/null
+      fi
+    fi
+
     # A trap may need extra flags on the claude command. Trap 07 denies the web
     # tools, because a question it asks is only meaningful when the agent cannot
     # look the answer up. One argument per line, blank lines and # comments ignored.
@@ -184,14 +218,14 @@ for slug in $TRAP_LIST; do
     printf '%-28s run %s/%s ... ' "$slug" "$i" "$REPEATS"
     START="$(date +%s)"
     if [ "$HAVE_TIMEOUT" = "1" ]; then
-      ( cd "$WORK" && JAVA_HOME="$BT_JAVA_HOME" timeout "${TIMEOUT_S}s" \
+      ( cd "$WORK" && JAVA_HOME="$BT_JAVA_HOME" PATH="${SKILL_BIN:+$SKILL_BIN:}$PATH" BT_MOCK_DIR="$MOCK_DIR" timeout "${TIMEOUT_S}s" \
           claude -p "$(cat "$TRAP_DIR/TASK.md")" \
             --output-format json --model "$MODEL" \
             --permission-mode bypassPermissions \
             ${TRAP_ARGS[@]+"${TRAP_ARGS[@]}"} ) \
         >"$WORKROOT/result.json" 2>"$WORKROOT/stderr.log"
     else
-      ( cd "$WORK" && JAVA_HOME="$BT_JAVA_HOME" \
+      ( cd "$WORK" && JAVA_HOME="$BT_JAVA_HOME" PATH="${SKILL_BIN:+$SKILL_BIN:}$PATH" BT_MOCK_DIR="$MOCK_DIR" \
           claude -p "$(cat "$TRAP_DIR/TASK.md")" \
             --output-format json --model "$MODEL" \
             --permission-mode bypassPermissions \
@@ -215,7 +249,7 @@ for slug in $TRAP_LIST; do
     printf '%s\n' "$LINE" > "$WORKROOT/verdict.txt"
 
     python "$HERE/lib/append_row.py" "$OUT" "$WORKROOT/result.json" \
-      "$slug" "$i" "$VERDICT" "$DETAIL" "$MODEL" "$WALL" "$STAMP"
+      "$slug" "$i" "$VERDICT" "$DETAIL" "$MODEL" "$WALL" "$STAMP" "$CONDITION"
 
     printf '%-12s %s (%ss)\n' "$VERDICT" "$DETAIL" "$WALL"
 

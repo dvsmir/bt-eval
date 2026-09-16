@@ -114,7 +114,28 @@ python lib/summarize.py results/<new>/results.csv results/<baseline>/results.csv
 ```
 
 Options: `-t` trap, `-n` repeats, `-m` model, `-T` timeout in seconds,
-`--naive` for a baseline with no project notes, `--dry-run` to see the plan.
+`--skill` to install the trap's declared skill, `--naive` for a baseline with no
+project notes, `--dry-run` to see the plan.
+
+### Checking whether a skill helps
+
+A skill is packaged knowledge that a session loads. Most skills teach the agent to call a
+tool that returns the answer, and the eval mocks that tool. To test whether a skill lowers
+the token cost, run a trap with it and without it, then compare.
+
+```bash
+./run.sh -t 07b-known-vulnerability-online -n 5              # baseline
+./run.sh -t 07b-known-vulnerability-online -n 5 --skill      # with the trap's skill
+python lib/summarize.py results/<skill>/results.csv results/<baseline>/results.csv
+```
+
+`--skill` installs the skills the trap names in its `skill.txt`, copied from `skills/`
+into the session. If the trap ships a `mock/` directory, the runner also puts the mock CLI
+`bt-ide` on PATH and serves those fixtures, so the agent calls the tool instead of resolving
+the dependency graph and searching online. The `condition` column of each CSV says which run
+was which. Judge the cost by the raw `billable` number, because a skill also costs tokens on
+every turn, and that cost must count against it. See CONTRACT.md section 12 for how to author
+a skill.
 
 ### On Windows, from PowerShell
 
@@ -136,6 +157,7 @@ python lib\summarize.py results\<stamp>\results.csv
 | `-T 1800` | `-TimeoutSec 1800` |
 | `-s <dir>` | `-ScratchRoot <dir>` |
 | `--naive` | `-Naive` |
+| `--skill` | `-Skill` |
 | `--calibrate` | `-Calibrate` |
 | `--dry-run` | `-DryRun` |
 
