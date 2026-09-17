@@ -205,7 +205,9 @@ because it is in place before that snapshot is taken.
 
 A skill is knowledge packaged so a session loads it. The eval measures
 whether a skill lowers the token cost of a trap. Run the same trap twice, once without
-the skill and once with it, then compare the two result files.
+the skill and once with it, then compare the two runs with
+`python lib/summarize.py --effect`. That command splits the rows by the `condition`
+column, so the argument order does not matter.
 
 Skills live in `skills/<name>/`, one directory per skill, each with a `SKILL.md`. A skill
 is written once and measured against many traps, so it stays a general capability. Do not

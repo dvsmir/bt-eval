@@ -77,12 +77,12 @@ function Die {
 function ConvertTo-BashPath {
   param([Parameter(Mandatory)][string]$Path)
   $full = [IO.Path]::GetFullPath($Path)
-  if ($full -match '^([A-Za-z]):[\/]?(.*)$') {
+  if ($full -match '^([A-Za-z]):[\\/]?(.*)$') {
     $drive = $Matches[1].ToLowerInvariant()
-    $rest = $Matches[2] -replace '\', '/'
+    $rest = $Matches[2] -replace '\\', '/'
     return ("/$drive/" + $rest).TrimEnd('/')
   }
-  return ($full -replace '\', '/')
+  return ($full -replace '\\', '/')
 }
 
 function ConvertFrom-BashPath {
@@ -582,3 +582,4 @@ foreach ($slug in $trapList) {
 Write-Host ''
 Write-Host "Done. Rows in $Out"
 Write-Host ('Summary: python "{0}\lib\summarize.py" "{1}"' -f $HERE, $Out)
+Write-Host ('Compare: python "{0}\lib\summarize.py" --effect results\<baseline-stamp> results\<skill-stamp>' -f $HERE)

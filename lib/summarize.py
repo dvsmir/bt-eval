@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """Summarize a results CSV.
 
-Usage: python summarize.py <results.csv> [<baseline.csv>] [--calibration <cal.csv>]
+Usage:
+  python summarize.py <results.csv> [<baseline.csv>] [--calibration <cal.csv>]
+  python summarize.py --effect <csv|dir> [<csv|dir> ...] [--calibration <cal.csv>]
+
+The --effect mode splits rows by the condition column and shows the skill's
+effect against the baseline, per trap. Argument order does not matter, because
+the split uses the recorded condition, not the file.
 
 With one file it reports the pass rate and the token cost of each trap.
 With two files it reports the change from the baseline to the new run, which is
@@ -210,23 +216,155 @@ def compare(path_a, path_b, explicit_cal=None):
         print("harness overhead. Calibrate both runs before you publish a figure.")
 
 
+def load_many(paths):
+    """Load rows from CSV files and directories.
+
+    A directory contributes its results.csv when present, otherwise every .csv
+    directly inside it. Returns (rows, files_used).
+    """
+    import glob
+    rows, used = [], []
+    for path in paths:
+        if os.path.isdir(path):
+            preferred = os.path.join(path, "results.csv")
+            files = [preferred] if os.path.isfile(preferred) else sorted(
+                glob.glob(os.path.join(path, "*.csv")))
+        else:
+            files = [path]
+        for handle in files:
+            if os.path.isfile(handle):
+                rows.extend(load(handle))
+                used.append(handle)
+    return rows, used
+
+
+def group_by_condition(rows):
+    """Return trap -> condition -> [rows], skipping calibration rows."""
+    out = {}
+    for row in rows:
+        trap = row.get("trap", "?")
+        if trap == CAL:
+            continue
+        cond = (row.get("condition") or "baseline").strip() or "baseline"
+        out.setdefault(trap, {}).setdefault(cond, []).append(row)
+    return out
+
+
+def compare_conditions(paths, explicit_cal=None, base="baseline", test="skill"):
+    """Show one condition against another, per trap.
+
+    Rows from every path are pooled and split by the condition column, so the
+    order of the arguments does not matter. The task figure is the median
+    billable count minus the fixed harness overhead, the same measure the
+    single-file report uses. The test condition carries the skill's always-on
+    system prompt cost, so the change already includes it.
+    """
+    rows, used = load_many(paths)
+    if not rows:
+        sys.stderr.write("summarize.py: no rows found in the given paths\n")
+        return 2
+
+    groups = group_by_condition(rows)
+    fixed, source = resolve_overhead(used[0] if used else paths[0], rows, explicit_cal)
+
+    print(f"\nFiles: {', '.join(used)}")
+    print(f"Effect of condition '{test}' against '{base}'.")
+    if fixed:
+        print(f"Fixed harness overhead (calibrated, {source}): "
+              f"{fixed:,} billable tokens per run, subtracted from each task figure.")
+    else:
+        print("Fixed harness overhead: NOT calibrated. Run ./run.sh --calibrate.")
+        print("  Task figures below still include the system prompt cost.")
+
+    def taskmed(group):
+        return max(med(group, "billable_tokens") - fixed, 0) if group else 0
+
+    def passrate(group):
+        if not group:
+            return "-"
+        passed = sum(1 for r in group if r.get("verdict") == "PASS")
+        return f"{passed}/{len(group)}"
+
+    bl, tl = base[:8], test[:8]
+    w_n, w_task, w_chg, w_pass = 10, 14, 8, 14
+    header = (f"\n{'trap':<28} "
+              f"{bl + ' n':>{w_n}} {tl + ' n':>{w_n}} "
+              f"{bl + ' task':>{w_task}} {tl + ' task':>{w_task}} "
+              f"{'change':>{w_chg}} "
+              f"{bl + ' pass':>{w_pass}} {tl + ' pass':>{w_pass}}")
+    print(header)
+    print("-" * len(header))
+
+    paired = 0
+    for trap in sorted(groups):
+        conds = groups[trap]
+        rb, rt = conds.get(base, []), conds.get(test, [])
+        tb, tt = taskmed(rb), taskmed(rt)
+        if rb and rt:
+            paired += 1
+            change = f"{((tt - tb) / tb * 100):+.0f}%" if tb else "n/a"
+        else:
+            change = "one only"
+        tb_s = (f"{tb:,}" if fixed else "--") if rb else "-"
+        tt_s = (f"{tt:,}" if fixed else "--") if rt else "-"
+        print(f"{trap:<28} "
+              f"{len(rb):>{w_n}} {len(rt):>{w_n}} "
+              f"{tb_s:>{w_task}} {tt_s:>{w_task}} "
+              f"{change:>{w_chg}} "
+              f"{passrate(rb):>{w_pass}} {passrate(rt):>{w_pass}}")
+
+    if not fixed:
+        print("\nNOTE: no calibration row, so the task figures and the change are")
+        print("diluted by the fixed harness overhead. Calibrate before you publish.")
+    if paired == 0:
+        print(f"\nWARNING: no trap has rows for both '{base}' and '{test}'.")
+        print("  Run the trap under each condition, or check the condition column.")
+    return 0
+
+
 def main():
-    args = [a for a in sys.argv[1:]]
+    args = list(sys.argv[1:])
     explicit_cal = None
-    if "--calibration" in args:
-        i = args.index("--calibration")
-        try:
-            explicit_cal = args[i + 1]
-        except IndexError:
-            sys.stderr.write("summarize.py: --calibration needs a file path\n")
-            return 2
-        del args[i:i + 2]
+    base, test = "baseline", "skill"
+    effect = False
+
+    for flag in ("--effect", "--by-condition"):
+        while flag in args:
+            effect = True
+            args.remove(flag)
+
+    def pop_value(flag):
+        if flag in args:
+            i = args.index(flag)
+            try:
+                value = args[i + 1]
+            except IndexError:
+                sys.stderr.write(f"summarize.py: {flag} needs a value\n")
+                sys.exit(2)
+            del args[i:i + 2]
+            return value
+        return None
+
+    cal = pop_value("--calibration")
+    if cal is not None:
+        explicit_cal = cal
+    picked_base = pop_value("--base")
+    if picked_base is not None:
+        base, effect = picked_base, True
+    picked_test = pop_value("--test")
+    if picked_test is not None:
+        test, effect = picked_test, True
 
     if len(args) < 1:
         sys.stderr.write(
             "usage: summarize.py <results.csv> [<baseline.csv>] "
-            "[--calibration <cal.csv>]\n")
+            "[--calibration <cal.csv>]\n"
+            "       summarize.py --effect <csv|dir> [<csv|dir> ...] "
+            "[--base NAME] [--test NAME] [--calibration <cal.csv>]\n")
         return 2
+
+    if effect:
+        return compare_conditions(args, explicit_cal, base, test)
     if len(args) >= 2:
         compare(args[0], args[1], explicit_cal)
     else:

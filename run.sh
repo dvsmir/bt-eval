@@ -363,3 +363,5 @@ done
 
 printf '\nDone. Rows in %s\n' "$OUT"
 printf 'Summary: python "%s/lib/summarize.py" "%s"\n' "$HERE" "$OUT"
+printf 'Compare: python "%s/lib/summarize.py" --effect results/<baseline-stamp> results/<skill-stamp>
+' "$HERE"

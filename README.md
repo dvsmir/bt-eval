@@ -188,20 +188,24 @@ before the snapshot is taken.
 
 ### Checking whether a skill helps
 
-Run the trap without the skill, then with it, then compare the two result files.
+Run the trap without the skill, then with it, then compare the two runs by condition.
 
 ```bash
 ./run.sh -t 07b-known-vulnerability-online -n 5              # baseline
 ./run.sh -t 07b-known-vulnerability-online -n 5 --skill      # with the trap's skill
-python lib/summarize.py results/<skill>/results.csv results/<baseline>/results.csv
+python lib/summarize.py --effect results/<baseline> results/<skill>
 ```
+
+`--effect` pools the rows and splits them by the `condition` column, so the argument order
+does not matter. It prints one line per trap: the baseline and skill task cost, the percent
+change, and the pass rate under each condition. Pass a run directory or a CSV file, and add
+`--calibration results/calibration.csv` when the runner has not stored one nearby.
 
 `--skill` installs the skills the trap names in its `skill.txt`, copied from `skills/` into
 the session. When the trap ships a `mock/` directory, the runner also serves it through
 `bt-ide`, so the agent calls the tool instead of resolving the graph and searching online.
-The `condition` column of each CSV says which run was which: `baseline` or `skill`. Judge the
-cost by the raw `billable` number, because a skill also costs tokens on every turn, and that
-cost counts against it. See CONTRACT.md section 12.
+Judge the cost by the raw `billable` number, because a skill also costs tokens on every
+turn, and that cost counts against it. See CONTRACT.md section 12.
 
 ### On Windows, from PowerShell
 
