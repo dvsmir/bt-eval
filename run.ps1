@@ -10,6 +10,11 @@
     3. It calls traps/<slug>/oracle.sh through Git Bash to get a verdict.
     4. It appends one row to the results CSV.
 
+  Each run is isolated from every other run. A fresh Claude config dir carries no
+  transcript, memory, history, plugin, or personal skill from a previous run or
+  from the host. A fresh Gradle home with the daemon off carries no build state.
+  Any Maven module the agent installs is purged from the shared repository.
+
   The oracles stay in bash on purpose. A PowerShell port would give the project
   two sources of truth for what counts as a PASS, and the two would drift. This
   runner therefore needs Git Bash. It refuses the WSL bash in System32, which
@@ -56,6 +61,11 @@ $PSNativeCommandUseErrorActionPreference = $false
 
 $HERE = $PSScriptRoot
 
+# The host's real Claude config. Each run gets a fresh copy seeded with only the
+# keys auth needs, so no transcript, memory, history, plugin, or personal skill
+# from a previous run or from the host reaches the agent. See the per-run block.
+$RealClaudeDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $env:USERPROFILE '.claude' }
+
 function Die {
   param([string]$Message)
   Write-Host "run.ps1: $Message" -ForegroundColor Red
@@ -67,12 +77,12 @@ function Die {
 function ConvertTo-BashPath {
   param([Parameter(Mandatory)][string]$Path)
   $full = [IO.Path]::GetFullPath($Path)
-  if ($full -match '^([A-Za-z]):[\\/]?(.*)$') {
+  if ($full -match '^([A-Za-z]):[\/]?(.*)$') {
     $drive = $Matches[1].ToLowerInvariant()
-    $rest = $Matches[2] -replace '\\', '/'
+    $rest = $Matches[2] -replace '\', '/'
     return ("/$drive/" + $rest).TrimEnd('/')
   }
-  return ($full -replace '\\', '/')
+  return ($full -replace '\', '/')
 }
 
 function ConvertFrom-BashPath {
@@ -100,6 +110,34 @@ function Clear-Scratch {
     Die "refusing to delete outside the scratch tree: $full"
   }
   Remove-Item -LiteralPath $full -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# Seed a fresh Claude config dir with only what auth needs, then the agent runs
+# with no prior transcript, memory, history, plugin, or the host's personal skills.
+function New-ClaudeHome {
+  param([Parameter(Mandatory)][string]$Dir)
+  if (Test-Path -LiteralPath $Dir) { Clear-Scratch $Dir }
+  New-Item -ItemType Directory -Force -Path $Dir | Out-Null
+  $cred = Join-Path $RealClaudeDir '.credentials.json'
+  if (Test-Path -LiteralPath $cred) {
+    Copy-Item -LiteralPath $cred -Destination (Join-Path $Dir '.credentials.json') -Force
+  }
+  $srcSettings = Join-Path $RealClaudeDir 'settings.json'
+  $dstSettings = Join-Path $Dir 'settings.json'
+  & $Python.Source (Join-Path $HERE 'lib\seed_claude_settings.py') $srcSettings $dstSettings 2>$null
+  if (-not (Test-Path -LiteralPath $dstSettings)) {
+    Set-Content -LiteralPath $dstSettings -Value '{}' -Encoding utf8 -NoNewline
+  }
+}
+
+# Junction the shared, immutable Gradle download cache and wrapper into a per-run
+# Gradle home, so isolation costs no re-download. Only when the target exists and
+# the link does not.
+function Add-SharedLink {
+  param([Parameter(Mandatory)][string]$Target, [Parameter(Mandatory)][string]$Link)
+  if (-not (Test-Path -LiteralPath $Target)) { return }
+  if (Test-Path -LiteralPath $Link) { return }
+  New-Item -ItemType Junction -Path $Link -Target $Target -ErrorAction SilentlyContinue | Out-Null
 }
 
 # --------------------------------------------------------------- prerequisites
@@ -202,18 +240,21 @@ function Invoke-Claude {
     [Parameter(Mandatory)][int]    $TimeoutSeconds,
     [Parameter(Mandatory)][string] $JavaHomeForRun,
     [string] $ExtraPath = '',
-    [string] $MockDir = ''
+    [string] $MockDir = '',
+    [string] $ClaudeConfigDir = ''
   )
   $argv = @('-p', '--output-format', 'json', '--model', $Model) + $ExtraArgs
   $prev = Get-Location
   $prevJava = $env:JAVA_HOME
   $prevPath = $env:PATH
   $prevMock = $env:BT_MOCK_DIR
+  $prevClaude = $env:CLAUDE_CONFIG_DIR
   try {
     Set-Location -LiteralPath $WorkDir
     $env:JAVA_HOME = $JavaHomeForRun
     if ($ExtraPath) { $env:PATH = "$ExtraPath;$env:PATH" }
     $env:BT_MOCK_DIR = $MockDir
+    if ($ClaudeConfigDir) { $env:CLAUDE_CONFIG_DIR = $ClaudeConfigDir }
     $proc = Start-Process -FilePath $Claude.Source -ArgumentList $argv `
       -RedirectStandardInput $PromptFile `
       -RedirectStandardOutput $StdoutFile `
@@ -231,6 +272,7 @@ function Invoke-Claude {
     $env:JAVA_HOME = $prevJava
     $env:PATH = $prevPath
     $env:BT_MOCK_DIR = $prevMock
+    $env:CLAUDE_CONFIG_DIR = $prevClaude
     Set-Location -LiteralPath $prev
   }
 }
@@ -243,13 +285,16 @@ if ($Calibrate) {
   if ($DryRun) { Write-Host "would calibrate with model $Model"; exit 0 }
   $dir = Join-Path $Scratch '_calibration'
   New-Item -ItemType Directory -Force -Path $dir | Out-Null
+  $calHome = Join-Path $dir 'claude-home'
+  New-ClaudeHome -Dir $calHome
   $promptFile = Join-Path $dir 'prompt.txt'
   Set-Content -LiteralPath $promptFile -Value 'Reply with exactly: OK' -Encoding utf8 -NoNewline
   Write-Host "Calibrating fixed harness overhead (model $Model) ..."
   $null = Invoke-Claude -WorkDir $dir -PromptFile $promptFile `
     -StdoutFile (Join-Path $dir 'result.json') `
     -StderrFile (Join-Path $dir 'stderr.log') `
-    -ExtraArgs @() -TimeoutSeconds $TimeoutSec -JavaHomeForRun $JavaHomeWin
+    -ExtraArgs @() -TimeoutSeconds $TimeoutSec -JavaHomeForRun $JavaHomeWin `
+    -ClaudeConfigDir $calHome
   & $Python.Source (Join-Path $HERE 'lib\append_row.py') $Out (Join-Path $dir 'result.json') `
     '_calibration' '0' 'PASS' 'fixed harness overhead' $Model '0' $Stamp 'calibration'
   $calStore = Join-Path $HERE 'results\calibration.csv'
@@ -286,6 +331,7 @@ Write-Host ('Repeats   : {0}' -f $Repeats)
 Write-Host ('Traps     : {0}' -f ($trapList -join ' '))
 Write-Host ('Baseline  : {0}' -f $baselineLabel)
 Write-Host ('Skill     : {0}' -f $(if ($Skill) { 'on (install declared skills)' } else { 'off' }))
+Write-Host ('Isolation : {0}' -f 'fresh Claude config, Gradle home, and Maven purge per run')
 Write-Host ('Java home : {0}' -f $JavaHomeWin)
 Write-Host ('Bash      : {0}' -f $Bash)
 Write-Host ('Results   : {0}' -f $Out)
@@ -337,6 +383,17 @@ foreach ($slug in $trapList) {
   if ($trapGradleHome) { $env:GRADLE_USER_HOME = $trapGradleHome }
   if ($trapMavenArgs) { $env:MAVEN_ARGS = $trapMavenArgs }
 
+  # A trap may pin its own Gradle home (09). Keep it across this trap's repeats, but
+  # force the daemon off so no in-memory build state survives between them.
+  if ($trapGradleHome) {
+    $ghWin = ConvertFrom-BashPath $trapGradleHome
+    New-Item -ItemType Directory -Force -Path $ghWin | Out-Null
+    $gp = Join-Path $ghWin 'gradle.properties'
+    $hasLine = (Test-Path -LiteralPath $gp) -and
+      (Select-String -LiteralPath $gp -Pattern '^org\.gradle\.daemon=false' -Quiet)
+    if (-not $hasLine) { Add-Content -LiteralPath $gp -Value 'org.gradle.daemon=false' }
+  }
+
   for ($i = 1; $i -le $Repeats; $i++) {
     $workRoot = Join-Path $RunDir "$slug\run$i"
     $work = Join-Path $Scratch "$slug\run$i\work"
@@ -351,6 +408,12 @@ foreach ($slug in $trapList) {
       $strayPath = Join-Path $work $stray
       if (Test-Path -LiteralPath $strayPath) { Clear-Scratch $strayPath }
     }
+
+    # Strip any committed build output so the agent starts from source, not from a
+    # previous build. Some trap projects carry a stale build/, .gradle/, or target/.
+    $preJunk = @(Get-ChildItem -LiteralPath $work -Directory -Recurse -Force -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -in @('build', '.gradle', 'target') })
+    foreach ($d in $preJunk) { Clear-Scratch $d.FullName }
 
     $baseline = Join-Path $HERE 'template\BASELINE_CLAUDE.md'
     if (-not $Naive -and (Test-Path -LiteralPath $baseline)) {
@@ -404,6 +467,46 @@ foreach ($slug in $trapList) {
         Where-Object { $_ -and -not $_.StartsWith('#') })
     }
 
+    # ---- per-run isolation ---------------------------------------------------
+    # No cache, memory, or daemon from a previous run may reach this one.
+    # Claude: a fresh, auth-seeded config dir (no transcripts, memory, or plugins).
+    $claudeHome = Join-Path (Split-Path $work -Parent) 'claude-home'
+    New-ClaudeHome -Dir $claudeHome
+
+    # Detect the build tool from what the agent will see.
+    $isMaven = (Test-Path -LiteralPath (Join-Path $work 'pom.xml')) -or
+      (Test-Path -LiteralPath (Join-Path $work 'mvnw')) -or
+      (@(Get-ChildItem -LiteralPath $work -Directory -ErrorAction SilentlyContinue |
+        Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'pom.xml') }).Count -gt 0)
+
+    # Gradle: a fresh home with the daemon off and only the immutable download cache
+    # and wrapper shared in, unless the trap pinned its own home above.
+    if ($trapGradleHome) {
+      $env:GRADLE_USER_HOME = $trapGradleHome
+    }
+    elseif (-not $isMaven) {
+      $gradleHome = Join-Path (Split-Path $work -Parent) 'gradle-home'
+      if (Test-Path -LiteralPath $gradleHome) { Clear-Scratch $gradleHome }
+      New-Item -ItemType Directory -Force -Path (Join-Path $gradleHome 'caches') | Out-Null
+      Set-Content -LiteralPath (Join-Path $gradleHome 'gradle.properties') -Value 'org.gradle.daemon=false' -Encoding ascii
+      Add-SharedLink -Target (Join-Path $env:USERPROFILE '.gradle\wrapper') -Link (Join-Path $gradleHome 'wrapper')
+      Add-SharedLink -Target (Join-Path $env:USERPROFILE '.gradle\caches\modules-2') -Link (Join-Path $gradleHome 'caches\modules-2')
+      $env:GRADLE_USER_HOME = $gradleHome
+    }
+    else {
+      [Environment]::SetEnvironmentVariable('GRADLE_USER_HOME', $null)
+    }
+
+    # Maven: keep the shared repository, but record its SNAPSHOT set now so any
+    # module the agent installs can be removed after, before it masks the trap for
+    # the next repeat.
+    $m2Repo = Join-Path $env:USERPROFILE '.m2\repository'
+    $snapBefore = @()
+    if ($isMaven -and (Test-Path -LiteralPath $m2Repo)) {
+      $snapBefore = @(Get-ChildItem -LiteralPath $m2Repo -Directory -Recurse -Force -Filter '*-SNAPSHOT' -ErrorAction SilentlyContinue |
+        ForEach-Object { $_.FullName })
+    }
+
     Write-Host ('{0,-28} run {1}/{2} ... ' -f $slug, $i, $Repeats) -NoNewline
 
     $resultJson = Join-Path $workRoot 'result.json'
@@ -414,11 +517,25 @@ foreach ($slug in $trapList) {
     $finished = Invoke-Claude -WorkDir $work -PromptFile (Join-Path $trapDir 'TASK.md') `
       -StdoutFile $resultJson -StderrFile $stderrLog `
       -ExtraArgs (@('--permission-mode', 'bypassPermissions') + $trapArgs) `
-      -TimeoutSeconds $TimeoutSec -JavaHomeForRun $trapJavaWin -ExtraPath $skillBin -MockDir $mockDir
+      -TimeoutSeconds $TimeoutSec -JavaHomeForRun $trapJavaWin -ExtraPath $skillBin -MockDir $mockDir `
+      -ClaudeConfigDir $claudeHome
     $sw.Stop()
     $wall = [int]$sw.Elapsed.TotalSeconds
     if (-not $finished) {
       Add-Content -LiteralPath $stderrLog -Value "run.ps1: killed after ${TimeoutSec}s"
+    }
+
+    # Remove any Maven module the agent installed into the shared repository, so the
+    # next repeat faces the trap fresh. Only SNAPSHOTs that appeared during this run
+    # go. This path is outside the scratch tree, so it does not use Clear-Scratch.
+    if ($isMaven -and (Test-Path -LiteralPath $m2Repo)) {
+      $snapAfter = @(Get-ChildItem -LiteralPath $m2Repo -Directory -Recurse -Force -Filter '*-SNAPSHOT' -ErrorAction SilentlyContinue |
+        ForEach-Object { $_.FullName })
+      foreach ($d in $snapAfter) {
+        if ($snapBefore -notcontains $d) {
+          Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction SilentlyContinue
+        }
+      }
     }
 
     $verdict = 'INCONCLUSIVE'
@@ -457,6 +574,8 @@ foreach ($slug in $trapList) {
     foreach ($d in $junk) { Clear-Scratch $d.FullName }
     Copy-Item -LiteralPath $work -Destination (Join-Path $workRoot 'work-final') -Recurse -ErrorAction SilentlyContinue
     Clear-Scratch $work
+    # Do not leave a copy of the host credentials in the scratch tree.
+    Clear-Scratch $claudeHome
   }
 }
 

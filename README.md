@@ -163,6 +163,29 @@ Options: `-t` trap, `-n` repeats, `-m` model, `-T` timeout in seconds, `--skill`
 the trap's declared skill, `--naive` for a baseline with no project notes, `--dry-run` to
 see the plan.
 
+### Each run starts clean
+
+Every run of a trap is isolated from every other run. No run passes or fails because of
+state a previous run left behind.
+
+Before each run the runner does four things:
+
+- It gives the agent a fresh Claude config directory. The copy carries only the keys that
+  reach the API. It has no transcript, memory, command history, plugin, or personal skill
+  from a previous run or from your own machine.
+- It gives Gradle a fresh home with the daemon off, so no build state survives between
+  runs. The download cache and the wrapper are shared through a link, so isolation costs
+  no re-download.
+- It removes any committed `build/`, `.gradle/`, or `target/` from the copied project, so
+  the agent starts from source.
+- It keeps the shared Maven cache, but records its snapshot set first and removes any
+  module the agent installed after the run. An installed snapshot would mask the trap for
+  the next repeat.
+
+A trap that pins its own Gradle home in `env.sh` keeps it, and the runner forces the
+daemon off there too. Trap state you plant in `env.sh` survives, because it is in place
+before the snapshot is taken.
+
 ### Checking whether a skill helps
 
 Run the trap without the skill, then with it, then compare the two result files.

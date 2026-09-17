@@ -194,6 +194,13 @@ them for both.
 Write the values in Windows form with `cygpath -w`, because the agent and the oracle run
 native Gradle and Maven. Use a path with no spaces: copy the file into `$TMPDIR` first.
 Maven's `-s` and a Gradle home both break on a path that contains a space.
+
+Each repeat starts clean, so do not rely on state one repeat leaves for the next.
+The runner forces the Gradle daemon off, including in a home a trap pins, so no
+warm build state carries over. It keeps the shared Maven cache, but removes any
+snapshot the agent installs after each run. State you plant in `env.sh` survives,
+because it is in place before that snapshot is taken.
+
 ## 12. skill.txt, the skills library, and mock tools
 
 A skill is knowledge packaged so a session loads it. The eval measures
